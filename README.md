@@ -93,6 +93,25 @@ Die App wird bei jedem Push auf `main` automatisch über GitHub Actions (`.githu
 - In den Repo-Settings unter **Settings → Pages** muss als Source **„Deploy from a branch" → Branch `gh-pages` / `/ (root)`** ausgewählt sein.
 - Wichtig: `web/index.html` nutzt `<base href="/hermes-tri-log/">`, weil die App als Project Page unter einem Unterpfad läuft.
 
+## Installation als PWA
+
+Die App ist eine installierbare PWA (`web/manifest.json` mit Icons in `web/icons/`,
+Theme-Farbe `#0F172A`, `display: standalone`) und läuft komplett lokal ohne Konto.
+
+- **Android installieren:** Live-URL in Chrome öffnen → Menü (⋮) →
+  „Zum Startbildschirm hinzufügen“ bzw. „App installieren“.
+- **Updates:** Nach einem neuen Deploy die App einmal **komplett schließen und neu
+  öffnen** – erst dann ist die neue Version aktiv. (Bewusst keine eigene
+  Update-Banner-Logik.)
+- **Offline (Stand heute eingeschränkt):** `flutter build web --release` erzeugt
+  weiterhin `flutter_service_worker.js`, Flutter 3.44 hat den eingebauten
+  Service-Worker-Cache aber abgekündigt (flutter/flutter#156910): die erzeugte Datei
+  meldet sich beim Aktivieren selbst wieder ab, es gibt also keinen
+  Framework-seitigen Offline-Cache mehr. Die Registrierung ist in
+  `flutter_bootstrap.js` aktiv, die App hängt damit nur am HTTP-Cache des Browsers.
+  Ein verlässlicher Offline-Start braucht einen eigenen Service Worker
+  (Folgeaufgabe, nicht Teil dieser Phase).
+
 ## Android
 
 Der Ordner `android/` ist vorhanden, wird in dieser Phase aber weder gebaut noch in der CI behandelt. Signatur-Dateien (`key.properties`, `*.jks`, `*.keystore`) sind via `.gitignore` ausgeschlossen.

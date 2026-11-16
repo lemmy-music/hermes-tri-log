@@ -28,6 +28,7 @@ class TodayScreen extends StatelessWidget {
     }
 
     return ListView(
+      // 96 px unten: Freiraum, damit der FloatingActionButton keine Karte verdeckt.
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       children: <Widget>[
         Text(formatDateGerman(today), style: theme.textTheme.headlineSmall),

@@ -20,6 +20,7 @@ class JournalScreen extends StatelessWidget {
 
     if (groups.isEmpty) {
       return ListView(
+        // 96 px unten: Freiraum, damit der FloatingActionButton nichts verdeckt.
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
         children: <Widget>[
           Text('Tagebuch', style: theme.textTheme.headlineSmall),
@@ -31,6 +32,7 @@ class JournalScreen extends StatelessWidget {
 
     final rows = _buildRows(groups);
     return ListView.builder(
+      // 96 px unten: Freiraum, damit der FloatingActionButton nichts verdeckt.
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       itemCount: rows.length + 1,
       itemBuilder: (context, index) {
