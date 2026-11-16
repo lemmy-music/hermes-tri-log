@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lemmy-music/hermes-tri-log/blob/main/docs/schema.json",
+  "title": "Tri-Log Datenformat",
+  "description": "Import- und Exportformat der Tri-Log-App (schema_version 1.0). Pläne werden als JSON von einer anderen KI geliefert; Exporte enthalten zusätzlich Aktivitäten und Tagebucheinträge. Alle Dauern sind Sekunden, Datumswerte entweder reine Kalendertage (YYYY-MM-DD) oder ISO-8601-Zeitstempel mit Offset. null bedeutet 'nicht erfasst' und ist ausdrücklich nicht 0.",
+  "type": "object",
+  "required": ["schema_version", "timezone", "plans"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Version des Dokumentformats. Aktuell ausschließlich \"1.0\"."
+    },
+    "exported_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Zeitpunkt der Erstellung (ISO-8601 mit lokalem Offset). Bei reinen Plan-Dateien darf das Feld fehlen."
+    },
+    "timezone": {
+      "type": "string",
+      "const": "Europe/Berlin",
+      "description": "Feste Zeitzone des Datenmodells."
+    },
+    "plans": {
+      "type": "array",
+      "description": "Trainingspläne. Eindeutiger Schlüssel ist die Kombination aus id und revision; ältere Revisionen bleiben erhalten.",
+      "items": { "$ref": "#/$defs/plan" }
+    },
+    "activities": {
+      "type": "array",
+      "description": "Tatsächlich absolvierte oder ausgelassene Einheiten. Optional (reine Plan-Dateien enthalten keine Activities).",
+      "items": { "$ref": "#/$defs/activity" }
+    },
+    "journal": {
+      "type": "array",
+      "description": "Tagebucheinträge. Optional (reine Plan-Dateien enthalten kein Journal).",
+      "items": { "$ref": "#/$defs/journalEntry" }
+    }
+  },
+  "$defs": {
+    "plan": {
+      "type": "object",
+      "required": ["id", "revision", "title", "sessions"],
+      "additionalProperties": true,
+      "description": "Eine Plan-Revision mit ihren Sitzungen.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stabile Plan-ID, z. B. \"winter-2026\"."
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Revisionsnummer, beginnend bei 1. Eine bestehende (id, revision) darf nur mit identischem Inhalt erneut importiert werden, sonst muss die Revision erhöht werden."
+        },
+        "title": {
+          "type": "string",
+          "description": "Anzeigetitel des Plans."
+        },
+        "sessions": {
+          "type": "array",
+          "description": "Geplante Einheiten; session.id ist innerhalb einer Plan-Revision eindeutig.",
+          "items": { "$ref": "#/$defs/session" }
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": ["id", "date", "sport", "type"],
+      "additionalProperties": true,
+      "description": "Geplante Einheit an einem Kalendertag.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eindeutige ID innerhalb der Plan-Revision."
+        },
+        "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "format": "date",
+          "description": "Kalendertag im Format YYYY-MM-DD (ohne Uhrzeit und ohne Zeitzone)."
+        },
+        "sport": {
+          "type": "string",
+          "enum": ["swim", "bike", "run", "strength", "other"],
+          "description": "Sportart. Unbekannte Werte sind ein harter Fehler."
+        },
+        "type": {
+          "type": "string",
+          "description": "Freier Einheitentyp, z. B. \"Technik\" oder \"Schwellen-Intervalle\"."
+        },
+        "optional": {
+          "type": ["boolean", "null"],
+          "default": false,
+          "description": "true = optionale Einheit. Fehlt das Feld, gilt false."
+        },
+        "planned_duration_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Geplante Gesamtdauer in Sekunden (Anzeige in Minuten)."
+        },
+        "instructions": {
+          "type": ["string", "null"],
+          "description": "Ausführliche Hinweise zur Einheit (deutsch)."
+        },
+        "structure": {
+          "oneOf": [{ "$ref": "#/$defs/structure" }, { "type": "null" }],
+          "description": "Optionale Intervall-Struktur."
+        }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Intervall-Struktur einer Einheit. Alle Felder sind optional; unbekannte Schlüssel werden beim Import/Export unverändert in einem extra-Objekt erhalten.",
+      "properties": {
+        "warmup_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Einfahren/Einschwimmen in Sekunden."
+        },
+        "repetitions": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Anzahl der Belastungswiederholungen."
+        },
+        "work_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Dauer einer Belastungswiederholung in Sekunden."
+        },
+        "recovery_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Dauer einer Pause zwischen den Wiederholungen in Sekunden."
+        },
+        "recovery_after_last": {
+          "type": ["boolean", "null"],
+          "description": "true = auch nach der letzten Wiederholung wird die Pause absolviert."
+        },
+        "cooldown_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Ausfahren/Auslaufen in Sekunden."
+        }
+      }
+    },
+    "activity": {
+      "type": "object",
+      "required": ["id", "started_at", "status"],
+      "additionalProperties": true,
+      "description": "Tatsächlich absolvierte (oder ausgelassene) Einheit.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eindeutige Aktivitäts-ID."
+        },
+        "plan_id": {
+          "type": ["string", "null"],
+          "description": "ID des zugehörigen Plans, falls die Einheit geplant war."
+        },
+        "plan_revision": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "description": "Revision des zugehörigen Plans."
+        },
+        "planned_session_id": {
+          "type": ["string", "null"],
+          "description": "ID der zugehörigen geplanten Sitzung."
+        },
+        "sport": {
+          "type": ["string", "null"],
+          "description": "Sportart der Aktivität – vor allem für ungeplante Einheiten. Unbekannte Werte sind nur ein Hinweis und werden unverändert übernommen."
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Startzeit als ISO-8601-Zeitstempel mit Offset, z. B. \"2026-11-23T18:05:00+01:00\"."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["completed", "partial", "skipped"],
+          "description": "abgeschlossen / teilweise / ausgelassen."
+        },
+        "elapsed_duration_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Gesamtdauer (Brutto) in Sekunden."
+        },
+        "moving_duration_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Bewegungszeit in Sekunden."
+        },
+        "distance_meters": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Distanz in Metern."
+        },
+        "average_heart_rate_bpm": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Durchschnittliche Herzfrequenz in bpm."
+        },
+        "average_power_watts": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Durchschnittliche Leistung in Watt."
+        },
+        "rpe": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Subjektive Anstrengung (RPE) von 1 bis 10."
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "description": "Freie Notiz zur Einheit."
+        }
+      }
+    },
+    "journalEntry": {
+      "type": "object",
+      "required": ["id", "timestamp", "metrics"],
+      "additionalProperties": true,
+      "description": "Tagebucheintrag mit Prozentwerten (0–100) und freiem Text.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Eindeutige ID des Eintrags."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Zeitpunkt des Eintrags als ISO-8601-Zeitstempel mit Offset."
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Befindlichkeitswerte in Prozent. Bekannte Schlüssel: energy (Energie), mood (Stimmung), happiness (Glück). null = nicht erfasst. Unbekannte Schlüssel werden erhalten.",
+          "additionalProperties": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "properties": {
+            "energy": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Energie in Prozent (0–100)."
+            },
+            "mood": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Stimmung in Prozent (0–100)."
+            },
+            "happiness": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Glück/Zufriedenheit in Prozent (0–100)."
+            }
+          }
+        },
+        "text": {
+          "type": ["string", "null"],
+          "description": "Freitext des Eintrags."
+        }
+      }
+    }
+  }
+}

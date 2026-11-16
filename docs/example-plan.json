@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "timezone": "Europe/Berlin",
+  "plans": [
+    {
+      "id": "winter-2026",
+      "revision": 1,
+      "title": "Wintergrundlage – Woche 1",
+      "sessions": [
+        {
+          "id": "w1-s1",
+          "date": "2026-11-23",
+          "sport": "swim",
+          "type": "Technik",
+          "optional": false,
+          "planned_duration_seconds": 2700,
+          "instructions": "Einschwimmen locker, danach 6× 50 m Technik (je 25 m Kraul, 25 m Beine), dazwischen 20 s Pause. Ruhig ausschwimmen."
+        },
+        {
+          "id": "w1-s2",
+          "date": "2026-11-24",
+          "sport": "strength",
+          "type": "Kraftausdauer",
+          "optional": false,
+          "planned_duration_seconds": 3600,
+          "instructions": "Aufwärmen 10 min, dann 3 Runden Kniebeuge, Ausfallschritte, Rudern am Band und Plank. Saubere Technik vor Last."
+        },
+        {
+          "id": "w1-s3",
+          "date": "2026-11-25",
+          "sport": "bike",
+          "type": "Schwellen-Intervalle",
+          "optional": false,
+          "planned_duration_seconds": 4500,
+          "instructions": "Nach dem Einfahren 3× 5 min bei Schwellenleistung, dazwischen 3 min locker treten. Ruhig ausfahren.",
+          "structure": {
+            "warmup_seconds": 900,
+            "repetitions": 3,
+            "work_seconds": 300,
+            "recovery_seconds": 180,
+            "recovery_after_last": false,
+            "cooldown_seconds": 1140
+          }
+        },
+        {
+          "id": "w1-s4",
+          "date": "2026-11-26",
+          "sport": "run",
+          "type": "Lockerer Dauerlauf",
+          "optional": false,
+          "planned_duration_seconds": 2400,
+          "instructions": "Ruhiges Tempo, das sich die ganze Zeit entspannt anfühlt. Atmung über die Nase muss möglich bleiben."
+        },
+        {
+          "id": "w1-s5",
+          "date": "2026-11-27",
+          "sport": "swim",
+          "type": "Koppel-Einheit locker",
+          "optional": true,
+          "planned_duration_seconds": 1800,
+          "instructions": "Nur wenn die Beine frisch sind: 20 min locker schwimmen, danach 10 min Auslaufen."
+        },
+        {
+          "id": "w1-s6",
+          "date": "2026-11-28",
+          "sport": "bike",
+          "type": "Lange Radausfahrt",
+          "optional": false,
+          "planned_duration_seconds": 7200,
+          "instructions": "Gleichmäßig im Grundlagenbereich fahren, alle 20 min einen Schluck trinken und regelmäßig essen. Keine harten Antritte."
+        }
+      ]
+    }
+  ]
+}

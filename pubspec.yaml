@@ -31,6 +31,19 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # State-Management (AppRepository extends ChangeNotifier)
+  provider: ^6.1.5
+
+  # Lokale Persistenz als ein einziges JSON-Dokument
+  shared_preferences: ^2.5.5
+
+  # Datei-Auswahl für den JSON-Import
+  file_picker: ^8.3.7
+
+  # Nur für den Web-Download nötig: dart:html ist deprecated, package:web ist
+  # der offizielle Nachfolger (wird von file_picker ohnehin mitgebracht).
+  web: ^1.1.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
