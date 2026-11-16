@@ -10,19 +10,28 @@ import '../utils/formats.dart';
 ///
 /// [planned] gesetzt → Ist-Daten einer geplanten Sitzung erfassen/bearbeiten.
 /// [unplanned] oder beides `null` → ungeplante Einheit (mit Sport-Auswahl).
+///
+/// [startedAt] (nur für eine neue Aktivität einer geplanten Sitzung) setzt den
+/// Zeitstempel – etwa für vergangene Tage aus dem Verlauf. Eine bestehende
+/// Aktivität behält ihren Zeitstempel immer.
 Future<void> showActivityEntrySheet(
   BuildContext context, {
   required DateTime day,
   TodaySession? planned,
   Activity? unplanned,
+  String? startedAt,
 }) {
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
-    builder: (_) =>
-        ActivityEntrySheet(day: day, planned: planned, unplanned: unplanned),
+    builder: (_) => ActivityEntrySheet(
+      day: day,
+      planned: planned,
+      unplanned: unplanned,
+      startedAt: startedAt,
+    ),
   );
 }
 
@@ -38,11 +47,15 @@ class ActivityEntrySheet extends StatefulWidget {
     required this.day,
     this.planned,
     this.unplanned,
+    this.startedAt,
   });
 
   final DateTime day;
   final TodaySession? planned;
   final Activity? unplanned;
+
+  /// Zeitstempel für eine neu anzulegende Aktivität (ISO mit lokalem Offset).
+  final String? startedAt;
 
   @override
   State<ActivityEntrySheet> createState() => _ActivityEntrySheetState();
@@ -182,6 +195,7 @@ class _ActivityEntrySheetState extends State<ActivityEntrySheet> {
         averagePowerWatts: power,
         rpe: isSkipped ? null : _rpe,
         notes: notes.isEmpty ? null : notes,
+        startedAt: widget.startedAt,
       );
     } else {
       activity = Activity(

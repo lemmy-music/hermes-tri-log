@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/models.dart';
 import '../services/export_service.dart';
+import '../services/history_service.dart';
 import '../services/import_service.dart';
 import '../services/merge_service.dart';
 import '../services/storage.dart';
@@ -255,6 +256,68 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     _state = _state.copyWith(activities: activities);
     _scheduleSave();
     _notify();
+  }
+
+  // ─── Tagebuch ──────────────────────────────────────────────────────────────
+
+  /// Neue, garantiert noch nicht verwendete Tagebuch-ID.
+  String nextJournalEntryId() => _ids.nextJournalEntry();
+
+  /// Alle Einträge, neueste zuerst.
+  List<JournalEntry> get journalEntriesNewestFirst =>
+      sortJournalNewestFirst(_state.journal);
+
+  JournalEntry? journalEntryById(String id) {
+    for (final entry in _state.journal) {
+      if (entry.id == id) return entry;
+    }
+    return null;
+  }
+
+  /// Einträge eines Kalendertags, aufsteigend nach Uhrzeit.
+  List<JournalEntry> journalEntriesForDate(DateTime date) {
+    final wanted = formatDateIso(date);
+    final result = <JournalEntry>[
+      for (final entry in _state.journal)
+        if (_journalDateIso(entry) == wanted) entry,
+    ];
+    result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return result;
+  }
+
+  /// Gesamtbefinden des letzten Eintrags eines Tages (oder `null`).
+  int? latestJournalFeelingForDate(DateTime date) {
+    final entries = journalEntriesForDate(date);
+    return entries.isEmpty ? null : entries.last.overallFeeling;
+  }
+
+  /// Legt einen Tagebucheintrag an bzw. überschreibt ihn (Upsert per id).
+  void saveJournalEntry(JournalEntry entry) {
+    final journal = <JournalEntry>[..._state.journal];
+    final index = journal.indexWhere((item) => item.id == entry.id);
+    if (index >= 0) {
+      journal[index] = entry;
+    } else {
+      journal.add(entry);
+    }
+    _state = _state.copyWith(journal: journal);
+    _scheduleSave();
+    _notify();
+  }
+
+  /// Löscht einen Tagebucheintrag.
+  void deleteJournalEntry(String id) {
+    final journal = _state.journal.where((entry) => entry.id != id).toList();
+    if (journal.length == _state.journal.length) return;
+    _state = _state.copyWith(journal: journal);
+    _scheduleSave();
+    _notify();
+  }
+
+  /// Kalendertag eines Tagebucheintrags in lokaler Zeit (`YYYY-MM-DD`).
+  String? _journalDateIso(JournalEntry entry) {
+    final local = DateTime.tryParse(entry.timestamp)?.toLocal();
+    return local == null ? null : formatDateIso(local);
   }
 
   // ─── Import ────────────────────────────────────────────────────────────────

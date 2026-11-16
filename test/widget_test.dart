@@ -11,7 +11,7 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  testWidgets('App startet mit drei Navigationszielen und Leerzustand', (
+  testWidgets('App startet mit vier Navigationszielen und Leerzustand', (
     tester,
   ) async {
     await tester.pumpWidget(const TriLogApp());
@@ -22,7 +22,7 @@ void main() {
         .widgetList<NavigationDestination>(find.byType(NavigationDestination))
         .map((destination) => destination.label)
         .toList();
-    expect(destinations, <String>['Heute', 'Tagebuch', 'Daten']);
+    expect(destinations, <String>['Heute', 'Tagebuch', 'Verlauf', 'Daten']);
 
     expect(find.text('Heute keine Einheit geplant.'), findsOneWidget);
     expect(
@@ -35,7 +35,7 @@ void main() {
     await tester.pumpWidget(const TriLogApp());
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.tap(find.byType(NavigationDestination).at(3));
     await tester.pumpAndSettle();
 
     expect(find.text('Plan importieren'), findsOneWidget);
@@ -44,14 +44,44 @@ void main() {
     expect(find.text('Alle Daten löschen'), findsOneWidget);
   });
 
-  testWidgets('Tagebuch-Tab zeigt den Platzhalter', (tester) async {
+  testWidgets('Tagebuch-Tab zeigt den Leerzustand', (tester) async {
     await tester.pumpWidget(const TriLogApp());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byType(NavigationDestination).at(1));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tagebuch folgt.'), findsOneWidget);
+    expect(find.text('Noch keine Einträge'), findsOneWidget);
+    expect(
+      find.textContaining('Gefühl, Schlaf oder Beschwerden'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('NavigationBar hat vier Ziele und der Wechsel funktioniert', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const TriLogApp());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
+
+    await tester.tap(find.byType(NavigationDestination).at(2));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Noch kein Verlauf'), findsOneWidget);
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(bar.selectedIndex, 2);
+    // Im Verlauf gibt es bewusst keinen FAB.
+    expect(find.byType(FloatingActionButton), findsNothing);
+
+    await tester.tap(find.byType(NavigationDestination).at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('Noch keine Einträge'), findsOneWidget);
+
+    await tester.tap(find.byType(NavigationDestination).at(0));
+    await tester.pumpAndSettle();
+    expect(find.byType(FloatingActionButton), findsOneWidget);
   });
 
   testWidgets(

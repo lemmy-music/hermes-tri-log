@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../state/app_repository.dart';
 import 'activity_sheet.dart';
 import 'data_screen.dart';
+import 'history_screen.dart';
 import 'journal_screen.dart';
+import 'journal_sheet.dart';
 import 'today_screen.dart';
 
-/// Rahmen mit NavigationBar: Heute · Tagebuch · Daten.
+/// Rahmen mit NavigationBar: Heute · Tagebuch · Verlauf · Daten.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -44,20 +46,14 @@ class _HomeShellState extends State<HomeShell> {
               children: const <Widget>[
                 TodayScreen(),
                 JournalScreen(),
+                HistoryScreen(),
                 DataScreen(),
               ],
             ),
           ),
         ],
       ),
-      floatingActionButton: _index == 0
-          ? FloatingActionButton(
-              tooltip: 'Ungeplante Einheit erfassen',
-              onPressed: () =>
-                  showActivityEntrySheet(context, day: repository.now),
-              child: const Icon(Icons.add),
-            )
-          : null,
+      floatingActionButton: _fabFor(context, repository),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),
@@ -73,6 +69,11 @@ class _HomeShellState extends State<HomeShell> {
             label: 'Tagebuch',
           ),
           NavigationDestination(
+            icon: Icon(Icons.insights_outlined),
+            selectedIcon: Icon(Icons.insights),
+            label: 'Verlauf',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.storage_outlined),
             selectedIcon: Icon(Icons.storage),
             label: 'Daten',
@@ -80,5 +81,25 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+
+  /// Heute → „+“ (ungeplante Einheit), Tagebuch → Stift (neuer Eintrag),
+  /// Verlauf und Daten ohne FAB.
+  Widget? _fabFor(BuildContext context, AppRepository repository) {
+    return switch (_index) {
+      0 => FloatingActionButton(
+        key: const Key('unplannedFab'),
+        tooltip: 'Ungeplante Einheit erfassen',
+        onPressed: () => showActivityEntrySheet(context, day: repository.now),
+        child: const Icon(Icons.add),
+      ),
+      1 => FloatingActionButton(
+        key: const Key('journalFab'),
+        tooltip: 'Tagebucheintrag',
+        onPressed: () => showJournalEntrySheet(context),
+        child: const Icon(Icons.edit_note),
+      ),
+      _ => null,
+    };
   }
 }
