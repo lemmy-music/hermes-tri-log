@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tri_log/models/models.dart';
 import 'package:tri_log/utils/formats.dart';
 import 'package:tri_log/utils/ids.dart';
 
@@ -50,6 +51,64 @@ void main() {
     test('Prozentwerte', () {
       expect(formatPercent(70), '70 %');
       expect(formatPercent(null), '–');
+    });
+  });
+
+  group('Eingaben, Abweichung und Sport-Namen', () {
+    test('Minuten-Parsing mit deutschem Komma und Punkt', () {
+      expect(parseMinutesToSeconds('35,5'), 2130);
+      expect(parseMinutesToSeconds('35.5'), 2130);
+      expect(parseMinutesToSeconds(' 35 '), 2100);
+      expect(parseMinutesToSeconds('0,5'), 30);
+      expect(parseMinutesToSeconds(''), isNull);
+      expect(parseMinutesToSeconds('   '), isNull);
+      expect(parseMinutesToSeconds(null), isNull);
+      expect(parseMinutesToSeconds('abc'), isNull);
+      expect(parseMinutesToSeconds('-5'), isNull);
+    });
+
+    test('Minuten-Text für Eingabefelder', () {
+      expect(minutesInputText(2700), '45');
+      expect(minutesInputText(2130), '35,5');
+      expect(minutesInputText(0), '0');
+      expect(minutesInputText(null), '');
+    });
+
+    test('Kilometer-Parsing und -Text', () {
+      expect(parseKilometersToMeters('1,8'), 1800);
+      expect(parseKilometersToMeters('1.85'), closeTo(1850, 0.0001));
+      expect(parseKilometersToMeters(''), isNull);
+      expect(parseKilometersToMeters('x'), isNull);
+      expect(kilometersInputText(1800), '1,8');
+      expect(kilometersInputText(1850), '1,85');
+      expect(kilometersInputText(10000), '10');
+      expect(kilometersInputText(0), '0');
+      expect(kilometersInputText(null), '');
+    });
+
+    test('durationDeltaLabel inkl. null-Grenzfällen', () {
+      expect(durationDeltaLabel(2700, 1800), '15 min kürzer');
+      expect(durationDeltaLabel(2700, 3000), '5 min länger');
+      expect(durationDeltaLabel(2700, 2700), 'wie geplant');
+      expect(durationDeltaLabel(2700, 2730), '0,5 min länger');
+      expect(durationDeltaLabel(2700, 0), '45 min kürzer');
+      expect(durationDeltaLabel(null, 3000), isNull);
+      expect(durationDeltaLabel(2700, null), isNull);
+      expect(durationDeltaLabel(null, null), isNull);
+    });
+
+    test('Sport-Anzeigenamen kommen aus einer Quelle', () {
+      expect(Sport.values.map((sport) => sport.labelDe).toList(), <String>[
+        'Schwimmen',
+        'Rad',
+        'Laufen',
+        'Kraft',
+        'Sonstiges',
+      ]);
+      expect(sportLabelFromWireName('bike'), 'Rad');
+      expect(sportLabelFromWireName('strength'), 'Kraft');
+      expect(sportLabelFromWireName('rowing'), 'rowing');
+      expect(sportLabelFromWireName(null), '');
     });
   });
 

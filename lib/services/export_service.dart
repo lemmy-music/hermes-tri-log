@@ -277,18 +277,12 @@ class ExportService {
 
   String _journalLine(JournalEntry entry) {
     final time = DateTime.tryParse(entry.timestamp)?.toLocal();
-    final parts = <String>[if (time != null) formatTime(time)];
-    for (final key in JournalEntry.knownMetricKeys) {
-      final label = JournalEntry.metricLabels[key] ?? key;
-      parts.add('$label ${formatPercent(entry.metrics[key])}');
-    }
-    entry.metrics.forEach((key, value) {
-      if (JournalEntry.knownMetricKeys.contains(key)) return;
-      parts.add('$key ${formatPercent(value)}');
-    });
+    final parts = <String>[
+      if (time != null) formatTime(time),
+      'Gesamtbefinden: ${formatPercent(entry.overallFeeling)}',
+    ];
     final text = entry.text?.trim();
     if (text != null && text.isNotEmpty) parts.add(text);
-    if (parts.isEmpty) return '–';
     return parts.join(' · ');
   }
 

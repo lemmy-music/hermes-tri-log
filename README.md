@@ -2,11 +2,12 @@
 
 Minimalistische Flutter-App zum **Anzeigen und Abhaken von Triathlon-Trainingsplänen**, die eine andere KI als JSON liefert. Alles läuft lokal auf dem Gerät – kein Backend, kein Account, kein Netzwerkzugriff zur Laufzeit.
 
-> **Status: Phase 2 – Datenmodell, lokale Persistenz, Import mit Vorschau, Export.**
+> **Status: Phase 3 – Einheiten abhaken und Ist-Daten erfassen.**
 > Enthalten: Datenmodell (Pläne/Sitzungen/Aktivitäten/Tagebuch), Speicherung als ein
-> JSON-Dokument, JSON-Import mit Änderungs-Vorschau, JSON-/Markdown-Export und eine
-> schlichte Heute-Liste. Logging-UI, Tagebuch-Oberfläche, Benachrichtigungen und
-> Statistik folgen in späteren Phasen.
+> JSON-Dokument, JSON-Import mit Änderungs-Vorschau, JSON-/Markdown-Export und der
+> Heute-Screen zum Abhaken (ein Tap) inkl. optionaler Ist-Daten und ungeplanter
+> Einheiten. Tagebuch-Oberfläche, Benachrichtigungen und Statistik folgen in
+> späteren Phasen.
 
 ## Stack
 
@@ -52,11 +53,32 @@ Die App speichert **ein einziges JSON-Dokument** unter dem `shared_preferences`-
   optional eine Intervall-`structure`. Unbekannte Struktur-Felder bleiben erhalten.
 - **Aktivitäten** und **Tagebucheinträge** werden beim Import nur ergänzt (Merge per
   `id`), nie gelöscht.
+- **Tagebucheinträge** haben genau ein `overall_feeling` (0–100, `null` = nicht
+  angegeben). Bewusst undifferenziert – keine Aufschlüsselung in Energie/Stimmung;
+  das frühere `metrics`-Objekt wird nicht mehr gelesen (Import: Hinweis, kein Fehler)
+  und nicht mehr geschrieben.
+- Pro geplanter Sitzung gibt es höchstens **eine** Aktivität (`planned_session_id`);
+  ein erneutes Abhaken/Bearbeiten aktualisiert sie, statt eine zweite anzulegen.
 - `null` heißt „nicht erfasst“ und ist **nicht** 0.
 
 Vollständige Feldbeschreibungen: [`docs/schema.json`](docs/schema.json) (JSON Schema
 draft 2020-12). Realistisches Beispiel: [`docs/example-plan.json`](docs/example-plan.json) –
 eine reine Plan-Datei, die der Importer fehlerfrei annimmt.
+
+## Bedienung (Tab „Heute“)
+
+- **Abhaken in einem Tap:** Häkchen rechts auf der Sitzungskarte → Aktivität mit
+  Status „Erledigt“ und der geplanten Dauer. SnackBar „Abgehakt: … “ mit
+  **Rückgängig**. Die Karte zeigt sofort das Badge; danach wird das Häkchen zum
+  Stift (Bearbeiten) – ein Duplikat entsteht nie.
+- **Karte antippen:** Bottom Sheet „Einheit erfassen“ mit Status
+  (Erledigt/Teilweise/Ausgelassen), Gesamtzeit in Minuten (Kommazahlen erlaubt),
+  optionalem RPE-Slider (1–10), Notiz und „Mehr Angaben“ (Bewegungszeit, Distanz,
+  Puls, Leistung). Speichern schließt das Sheet nicht, sondern bestätigt im Sheet;
+  schließen per X, Wischen oder „Fertig“. „Löschen“ entfernt die Ist-Daten wieder.
+- **Ungeplante Einheit:** FAB „+“ auf dem Heute-Screen → gleiches Sheet mit
+  Sport-Auswahl; der Eintrag erscheint im Abschnitt „Zusätzlich“.
+- Der Kopf fasst zusammen: „X von Y erledigt“ (plus „· Z teilweise“).
 
 Der JSON-Export enthält immer alle Pläne (inkl. aller Revisionen) als Kontext; ein
 optionaler Zeitraumfilter (`from`/`to`, inklusiv) wirkt nur auf Aktivitäten und

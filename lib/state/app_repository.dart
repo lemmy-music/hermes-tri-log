@@ -9,6 +9,7 @@ import '../services/import_service.dart';
 import '../services/merge_service.dart';
 import '../services/storage.dart';
 import '../utils/formats.dart';
+import '../utils/ids.dart';
 
 /// Eine Sitzung des Tages inkl. zugehörigem Plan (für die Heute-Liste).
 class TodaySession {
@@ -27,11 +28,13 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     Duration? saveDebounce,
     ExportService? exporter,
     ImportService? importer,
+    IdGenerator? ids,
   }) : _storage = storage ?? const StorageService(),
        _clock = clock ?? DateTime.now,
        _saveDebounce = saveDebounce ?? const Duration(milliseconds: 300),
        _exporter = exporter ?? const ExportService(),
-       _importer = importer ?? const ImportService() {
+       _importer = importer ?? const ImportService(),
+       _ids = ids ?? IdGenerator() {
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -40,6 +43,7 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
   final Duration _saveDebounce;
   final ExportService _exporter;
   final ImportService _importer;
+  final IdGenerator _ids;
 
   AppState _state = AppState.empty();
   bool _loaded = false;
@@ -160,6 +164,99 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
 
   List<TodaySession> get todaySessions => sessionsForDate(_clock());
 
+  // ─── Aktivitäten (Erfassen / Abhaken) ──────────────────────────────────────
+
+  /// Neue, garantiert noch nicht verwendete Aktivitäts-ID.
+  String nextActivityId() => _ids.nextActivity();
+
+  /// Die eine primäre Aktivität einer geplanten Sitzung (1:1-Regel) oder null.
+  Activity? activityForSession(String? plannedSessionId) {
+    if (plannedSessionId == null || plannedSessionId.isEmpty) return null;
+    for (final activity in _state.activities) {
+      if (activity.plannedSessionId == plannedSessionId) return activity;
+    }
+    return null;
+  }
+
+  /// Ungeplante Einheiten eines Kalendertags, sortiert nach Startzeit.
+  List<Activity> unplannedActivitiesForDate(DateTime date) {
+    final wanted = formatDateIso(date);
+    final result = <Activity>[
+      for (final activity in _state.activities)
+        if (activity.plannedSessionId == null)
+          if (_activityDateIso(activity) == wanted) activity,
+    ];
+    result.sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    return result;
+  }
+
+  List<Activity> get todayUnplannedActivities =>
+      unplannedActivitiesForDate(_clock());
+
+  /// Legt eine Aktivität an bzw. überschreibt sie (Upsert per [Activity.id]).
+  void saveActivity(Activity activity) {
+    final activities = <Activity>[..._state.activities];
+    final index = activities.indexWhere((item) => item.id == activity.id);
+    if (index >= 0) {
+      activities[index] = activity;
+    } else {
+      activities.add(activity);
+    }
+    _state = _state.copyWith(activities: activities);
+    _scheduleSave();
+    _notify();
+  }
+
+  /// Legt die Aktivität einer geplanten Sitzung an **oder** aktualisiert sie.
+  ///
+  /// Es gibt bewusst höchstens eine primäre Aktivität pro
+  /// `planned_session_id`; ein zweiter Aufruf erzeugt kein Duplikat, sondern
+  /// überschreibt die bestehende Aktivität (ID und Startzeit bleiben erhalten).
+  Activity saveActivityForSession({
+    required Plan plan,
+    required Session session,
+    required ActivityStatus status,
+    int? elapsedDurationSeconds,
+    int? movingDurationSeconds,
+    double? distanceMeters,
+    int? averageHeartRateBpm,
+    int? averagePowerWatts,
+    int? rpe,
+    String? notes,
+    String? startedAt,
+  }) {
+    final existing = activityForSession(session.id);
+    final activity = Activity(
+      id: existing?.id ?? nextActivityId(),
+      planId: plan.id,
+      planRevision: plan.revision,
+      plannedSessionId: session.id,
+      sport: session.sport.wireName,
+      startedAt: existing?.startedAt ?? startedAt ?? isoWithOffset(_clock()),
+      status: status,
+      elapsedDurationSeconds: elapsedDurationSeconds,
+      movingDurationSeconds: movingDurationSeconds,
+      distanceMeters: distanceMeters,
+      averageHeartRateBpm: averageHeartRateBpm,
+      averagePowerWatts: averagePowerWatts,
+      rpe: rpe,
+      notes: notes,
+    );
+    saveActivity(activity);
+    return activity;
+  }
+
+  /// Löscht eine Aktivität (z. B. „Rückgängig“ nach dem Abhaken).
+  void deleteActivity(String id) {
+    final activities = _state.activities
+        .where((activity) => activity.id != id)
+        .toList();
+    if (activities.length == _state.activities.length) return;
+    _state = _state.copyWith(activities: activities);
+    _scheduleSave();
+    _notify();
+  }
+
   // ─── Import ────────────────────────────────────────────────────────────────
 
   ImportResult parseImport(String jsonText) => _importer.parse(jsonText);
@@ -206,6 +303,12 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
       _storageWarning = 'Löschen des Speichers fehlgeschlagen.';
       _notify();
     }
+  }
+
+  /// Kalendertag einer Aktivität in lokaler Zeit (`YYYY-MM-DD`) oder null.
+  String? _activityDateIso(Activity activity) {
+    final local = DateTime.tryParse(activity.startedAt)?.toLocal();
+    return local == null ? null : formatDateIso(local);
   }
 
   void _notify() {

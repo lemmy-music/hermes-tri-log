@@ -80,6 +80,56 @@ String formatDistanceKm(double? meters, {String empty = '–'}) {
 String formatPercent(int? value, {String empty = '–'}) =>
     value == null ? empty : '$value %';
 
+/// Parst eine Dezimalzahl mit deutschem Komma ODER Punkt (`35,5` / `35.5`).
+/// Leere oder unparsbare Eingaben liefern `null` (nichts wird geraten).
+double? parseDecimalGerman(String? input) {
+  if (input == null) return null;
+  final trimmed = input.trim();
+  if (trimmed.isEmpty) return null;
+  return double.tryParse(trimmed.replaceAll(',', '.'));
+}
+
+/// Minuteneingabe → Sekunden. Leer/ungültig/negativ → `null`.
+int? parseMinutesToSeconds(String? input) {
+  final minutes = parseDecimalGerman(input);
+  if (minutes == null || minutes < 0) return null;
+  return (minutes * 60).round();
+}
+
+/// Sekunden → Text für ein Minuten-Eingabefeld (ohne Einheit), `''` bei null.
+String minutesInputText(int? seconds) =>
+    seconds == null ? '' : formatMinutes(seconds);
+
+/// Kilometereingabe → Meter. Leer/ungültig/negativ → `null`.
+double? parseKilometersToMeters(String? input) {
+  final km = parseDecimalGerman(input);
+  if (km == null || km < 0) return null;
+  return km * 1000;
+}
+
+/// Meter → Text für ein Kilometer-Eingabefeld (ohne Einheit), `''` bei null.
+String kilometersInputText(double? meters) {
+  if (meters == null) return '';
+  final fixed = (meters / 1000).toStringAsFixed(2);
+  final trimmed = fixed
+      .replaceAll(RegExp(r'0+$'), '')
+      .replaceAll(RegExp(r'\.$'), '');
+  return trimmed.replaceAll('.', ',');
+}
+
+/// Vergleich Ist- gegen Plan-Dauer als kurzer deutscher Text:
+/// `wie geplant`, `15 min kürzer`, `5 min länger`.
+///
+/// Liefert `null`, wenn eine der beiden Angaben fehlt – es wird nichts
+/// erfunden.
+String? durationDeltaLabel(int? planSeconds, int? actualSeconds) {
+  if (planSeconds == null || actualSeconds == null) return null;
+  final diffSeconds = actualSeconds - planSeconds;
+  if (diffSeconds == 0) return 'wie geplant';
+  final amount = formatMinutes(diffSeconds.abs());
+  return diffSeconds < 0 ? '$amount min kürzer' : '$amount min länger';
+}
+
 /// ISO-8601-Zeitstempel mit explizitem lokalem Offset (`2026-11-16T20:05:00+01:00`).
 String isoWithOffset(DateTime dateTime) {
   final local = dateTime.isUtc ? dateTime.toLocal() : dateTime;

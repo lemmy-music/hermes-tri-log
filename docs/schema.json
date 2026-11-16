@@ -225,9 +225,9 @@
     },
     "journalEntry": {
       "type": "object",
-      "required": ["id", "timestamp", "metrics"],
+      "required": ["id", "timestamp"],
       "additionalProperties": true,
-      "description": "Tagebucheintrag mit Prozentwerten (0–100) und freiem Text.",
+      "description": "Tagebucheintrag mit einem einzigen Gesamtbefinden (0–100) und freiem Text.",
       "properties": {
         "id": {
           "type": "string",
@@ -239,34 +239,11 @@
           "format": "date-time",
           "description": "Zeitpunkt des Eintrags als ISO-8601-Zeitstempel mit Offset."
         },
-        "metrics": {
-          "type": "object",
-          "description": "Befindlichkeitswerte in Prozent. Bekannte Schlüssel: energy (Energie), mood (Stimmung), happiness (Glück). null = nicht erfasst. Unbekannte Schlüssel werden erhalten.",
-          "additionalProperties": {
-            "type": ["integer", "null"],
-            "minimum": 0,
-            "maximum": 100
-          },
-          "properties": {
-            "energy": {
-              "type": ["integer", "null"],
-              "minimum": 0,
-              "maximum": 100,
-              "description": "Energie in Prozent (0–100)."
-            },
-            "mood": {
-              "type": ["integer", "null"],
-              "minimum": 0,
-              "maximum": 100,
-              "description": "Stimmung in Prozent (0–100)."
-            },
-            "happiness": {
-              "type": ["integer", "null"],
-              "minimum": 0,
-              "maximum": 100,
-              "description": "Glück/Zufriedenheit in Prozent (0–100)."
-            }
-          }
+        "overall_feeling": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Gesamtbefinden, 0 = sehr schlecht, 100 = sehr gut, null = nicht angegeben. Bewusst undifferenziert (nicht in Energie/Stimmung aufgeschlüsselt)."
         },
         "text": {
           "type": ["string", "null"],

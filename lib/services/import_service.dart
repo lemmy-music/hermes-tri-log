@@ -87,9 +87,12 @@ const Set<String> _activityKeys = <String>{
   'notes',
 };
 
-const Set<String> _journalKeys = <String>{'id', 'timestamp', 'metrics', 'text'};
-
-const Set<String> _knownMetricKeys = <String>{'energy', 'mood', 'happiness'};
+const Set<String> _journalKeys = <String>{
+  'id',
+  'timestamp',
+  'overall_feeling',
+  'text',
+};
 
 /// Parst und validiert eine Import-Datei (Plan-Datei oder vollständiger Export).
 class ImportService {
@@ -669,40 +672,23 @@ class ImportService {
         ctx.warn('$where: timestamp liegt mehr als 2 Jahre entfernt.');
       }
 
-      final metrics = <String, int?>{};
-      final rawMetrics = entry['metrics'];
-      if (rawMetrics != null) {
-        if (rawMetrics is! Map) {
-          ctx.error('$where: metrics muss ein JSON-Objekt sein.');
+      int? overallFeeling;
+      final rawFeeling = entry['overall_feeling'];
+      if (rawFeeling != null) {
+        if (rawFeeling is! int) {
+          ctx.error(
+            '$where: overall_feeling muss eine ganze Zahl zwischen 0 und 100 '
+            'sein.',
+          );
+          valid = false;
+        } else if (rawFeeling < 0 || rawFeeling > 100) {
+          ctx.error(
+            '$where: overall_feeling muss zwischen 0 und 100 liegen '
+            '(war $rawFeeling).',
+          );
           valid = false;
         } else {
-          for (final metric in rawMetrics.entries) {
-            final key = metric.key.toString();
-            if (!_knownMetricKeys.contains(key)) {
-              ctx.warn(
-                '$where: unbekannte Metrik "$key" wird unverändert erhalten.',
-              );
-            }
-            final value = metric.value;
-            if (value == null) {
-              metrics[key] = null;
-              continue;
-            }
-            if (value is! int) {
-              ctx.error('$where: Metrik "$key" muss eine ganze Zahl sein.');
-              valid = false;
-              continue;
-            }
-            if (value < 0 || value > 100) {
-              ctx.error(
-                '$where: Metrik "$key" muss zwischen 0 und 100 liegen '
-                '(war $value).',
-              );
-              valid = false;
-              continue;
-            }
-            metrics[key] = value;
-          }
+          overallFeeling = rawFeeling;
         }
       }
 
@@ -722,7 +708,7 @@ class ImportService {
         JournalEntry(
           id: id!,
           timestamp: rawTimestamp,
-          metrics: metrics,
+          overallFeeling: overallFeeling,
           text: text,
         ),
       );

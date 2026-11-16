@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_repository.dart';
+import 'activity_sheet.dart';
 import 'data_screen.dart';
 import 'journal_screen.dart';
 import 'today_screen.dart';
@@ -49,6 +50,14 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
+      floatingActionButton: _index == 0
+          ? FloatingActionButton(
+              tooltip: 'Ungeplante Einheit erfassen',
+              onPressed: () =>
+                  showActivityEntrySheet(context, day: repository.now),
+              child: const Icon(Icons.add),
+            )
+          : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (index) => setState(() => _index = index),

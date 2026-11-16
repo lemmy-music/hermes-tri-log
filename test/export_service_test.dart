@@ -146,14 +146,32 @@ void main() {
       expect(markdown, contains('Notiz: „Lief gut“'));
     });
 
-    test('Tagebuch-Einträge mit Prozentwerten und – für fehlende Werte', () {
-      final markdown = exporter.buildMarkdown(sampleState(), now: now);
-      expect(markdown, contains('**Tagebuch**'));
-      expect(markdown, contains('Energie 70 %'));
-      expect(markdown, contains('Stimmung 80 %'));
-      expect(markdown, contains('Glück –'));
-      expect(markdown, contains('Guter Schlaf'));
-    });
+    test(
+      'Tagebuch-Einträge zeigen das Gesamtbefinden und – bei fehlendem Wert',
+      () {
+        final markdown = exporter.buildMarkdown(sampleState(), now: now);
+        expect(markdown, contains('**Tagebuch**'));
+        expect(markdown, contains('Gesamtbefinden: 80 %'));
+        expect(markdown, contains('Guter Schlaf'));
+        expect(markdown, isNot(contains('metrics')));
+        expect(markdown, isNot(contains('Energie')));
+
+        final withoutFeeling = exporter.buildMarkdown(
+          sampleState(
+            journal: <JournalEntry>[
+              const JournalEntry(
+                id: 'j2',
+                timestamp: '2026-11-23T22:00:00+01:00',
+                text: 'Müde',
+              ),
+            ],
+          ),
+          now: now,
+        );
+        expect(withoutFeeling, contains('Gesamtbefinden: –'));
+        expect(withoutFeeling, contains('Müde'));
+      },
+    );
 
     test('Tage ohne Ist-Daten zeigen – und keine erfundenen Werte', () {
       final markdown = exporter.buildMarkdown(sampleState(), now: now);

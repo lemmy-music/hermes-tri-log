@@ -71,13 +71,12 @@ Map<String, dynamic> activityJson({
 Map<String, dynamic> journalJson({
   String id = 'j1',
   String timestamp = '2026-11-23T21:30:00+01:00',
-  Map<String, int?>? metrics,
+  int? overallFeeling = 80,
   String? text,
 }) => <String, dynamic>{
   'id': id,
   'timestamp': timestamp,
-  'metrics':
-      metrics ?? <String, int?>{'energy': 70, 'mood': 80, 'happiness': null},
+  'overall_feeling': overallFeeling,
   'text': text,
 };
 
@@ -156,7 +155,7 @@ AppState sampleState({
         JournalEntry(
           id: 'j1',
           timestamp: '2026-11-23T21:30:00+01:00',
-          metrics: <String, int?>{'energy': 70, 'mood': 80, 'happiness': null},
+          overallFeeling: 80,
           text: 'Guter Schlaf',
         ),
       ],

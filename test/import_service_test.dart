@@ -166,18 +166,93 @@ void main() {
     expect(result.errors.join(' '), contains('darf nicht negativ sein'));
   });
 
-  test('Metriken außerhalb 0..100 sind harte Fehler', () {
+  test('overall_feeling außerhalb 0..100 ist ein harter Fehler', () {
+    for (final value in <int>[-1, 101]) {
+      final result = service.parse(
+        documentJson(
+          plans: <Map<String, dynamic>>[planJson()],
+          journal: <Map<String, dynamic>>[journalJson(overallFeeling: value)],
+        ),
+        now: now,
+      );
+      expect(result.hasErrors, isTrue, reason: 'Wert $value');
+      expect(result.errors.join(' '), contains('zwischen 0 und 100'));
+      expect(result.journal, isEmpty);
+    }
+  });
+
+  test('overall_feeling als Text ist ein harter Fehler', () {
     final result = service.parse(
       documentJson(
         plans: <Map<String, dynamic>>[planJson()],
         journal: <Map<String, dynamic>>[
-          journalJson(metrics: <String, int?>{'mood': 101}),
+          <String, dynamic>{...journalJson(), 'overall_feeling': '60'},
         ],
       ),
       now: now,
     );
     expect(result.hasErrors, isTrue);
-    expect(result.errors.join(' '), contains('zwischen 0 und 100'));
+    expect(result.errors.join(' '), contains('overall_feeling'));
+    expect(result.journal, isEmpty);
+  });
+
+  test('overall_feeling 0/100/null ist gültig', () {
+    final result = service.parse(
+      documentJson(
+        plans: <Map<String, dynamic>>[planJson()],
+        journal: <Map<String, dynamic>>[
+          journalJson(id: 'j0', overallFeeling: 0),
+          journalJson(id: 'j100', overallFeeling: 100),
+          journalJson(id: 'jnull', overallFeeling: null),
+        ],
+      ),
+      now: now,
+    );
+    expect(result.errors, isEmpty);
+    expect(result.journal.map((entry) => entry.overallFeeling), <int?>[
+      0,
+      100,
+      null,
+    ]);
+  });
+
+  test('altes metrics-Objekt erzeugt nur eine Warnung, keinen Fehler', () {
+    final result = service.parse(
+      documentJson(
+        plans: <Map<String, dynamic>>[planJson()],
+        journal: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'j-alt',
+            'timestamp': '2026-11-23T21:30:00+01:00',
+            'metrics': <String, dynamic>{'mood': 80},
+            'text': 'alt',
+          },
+        ],
+      ),
+      now: now,
+    );
+    expect(result.errors, isEmpty);
+    expect(result.warnings.join(' '), contains('unbekanntes Feld "metrics"'));
+    expect(result.ignoredUnknownFields, 1);
+    expect(result.journal.single.overallFeeling, isNull);
+    expect(result.journal.single.text, 'alt');
+  });
+
+  test('docs/schema.json beschreibt overall_feeling und kein metrics', () {
+    final schema =
+        jsonDecode(File('docs/schema.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final defs = schema[r'$defs'] as Map<String, dynamic>;
+    final journalEntry = defs['journalEntry'] as Map<String, dynamic>;
+    final properties = journalEntry['properties'] as Map<String, dynamic>;
+
+    expect(properties.containsKey('overall_feeling'), isTrue);
+    expect(properties.containsKey('metrics'), isFalse);
+    final feeling = properties['overall_feeling'] as Map<String, dynamic>;
+    expect(feeling['type'], <String>['integer', 'null']);
+    expect(feeling['minimum'], 0);
+    expect(feeling['maximum'], 100);
+    expect(jsonEncode(schema), isNot(contains('"metrics"')));
   });
 
   test('unbekannte Felder werden gezählt und als Hinweis gemeldet', () {

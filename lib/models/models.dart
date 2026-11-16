@@ -27,6 +27,11 @@ const Map<String, Sport> _sportByWireName = <String, Sport>{
 Sport? sportFromWireName(String? name) =>
     name == null ? null : _sportByWireName[name];
 
+/// Anzeigename für einen Wire-Wert (z. B. an ungeplanten Aktivitäten).
+/// Unbekannte Werte werden unverändert zurückgegeben, `null` → `''`.
+String sportLabelFromWireName(String? name) =>
+    sportFromWireName(name)?.labelDe ?? (name ?? '');
+
 extension SportX on Sport {
   String get wireName => switch (this) {
     Sport.swim => 'swim',
@@ -71,6 +76,14 @@ extension ActivityStatusX on ActivityStatus {
     ActivityStatus.completed => 'abgeschlossen',
     ActivityStatus.partial => 'teilweise',
     ActivityStatus.skipped => 'ausgelassen',
+  };
+
+  /// Kurze Anzeige für Karte, Badge und Sheet („Erledigt“/„Teilweise“/
+  /// „Ausgelassen“). [labelDe] bleibt die ausführliche Form für den Export.
+  String get shortLabelDe => switch (this) {
+    ActivityStatus.completed => 'Erledigt',
+    ActivityStatus.partial => 'Teilweise',
+    ActivityStatus.skipped => 'Ausgelassen',
   };
 }
 
@@ -407,50 +420,30 @@ class Activity {
 // JournalEntry
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Tagebuch-Eintrag. [metrics] enthält Prozentwerte 0..100; `null` bedeutet
-/// "nicht erfasst" und ist ausdrücklich NICHT 0.
+/// Tagebuch-Eintrag. [overallFeeling] ist bewusst ein einziger,
+/// undifferenzierter Wert 0..100 ("wie ich mich insgesamt fühle"); `null`
+/// bedeutet "nicht erfasst" und ist ausdrücklich NICHT 0.
 class JournalEntry {
   const JournalEntry({
     required this.id,
     required this.timestamp,
-    this.metrics = const <String, int?>{},
+    this.overallFeeling,
     this.text,
   });
 
-  /// Bekannte Metrik-Schlüssel (Reihenfolge = Anzeige-Reihenfolge).
-  static const List<String> knownMetricKeys = <String>[
-    'energy',
-    'mood',
-    'happiness',
-  ];
-
-  static const Map<String, String> metricLabels = <String, String>{
-    'energy': 'Energie',
-    'mood': 'Stimmung',
-    'happiness': 'Glück',
-  };
-
   final String id;
   final String timestamp;
-  final Map<String, int?> metrics;
+
+  /// Gesamtbefinden 0..100 (0 = sehr schlecht, 100 = sehr gut).
+  final int? overallFeeling;
   final String? text;
 
-  factory JournalEntry.fromJson(Map<String, dynamic> json) {
-    final metrics = <String, int?>{};
-    final rawMetrics = json['metrics'];
-    if (rawMetrics is Map) {
-      for (final entry in rawMetrics.entries) {
-        final value = entry.value;
-        metrics[entry.key.toString()] = value is int ? value : _readInt(value);
-      }
-    }
-    return JournalEntry(
-      id: _readString(json['id']) ?? '',
-      timestamp: _readString(json['timestamp']) ?? '',
-      metrics: metrics,
-      text: _readString(json['text']),
-    );
-  }
+  factory JournalEntry.fromJson(Map<String, dynamic> json) => JournalEntry(
+    id: _readString(json['id']) ?? '',
+    timestamp: _readString(json['timestamp']) ?? '',
+    overallFeeling: _readInt(json['overall_feeling']),
+    text: _readString(json['text']),
+  );
 
   static JournalEntry? tryFromJson(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -464,7 +457,7 @@ class JournalEntry {
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'timestamp': timestamp,
-    'metrics': Map<String, dynamic>.from(metrics),
+    'overall_feeling': overallFeeling,
     'text': text,
   };
 }

@@ -95,29 +95,40 @@ void main() {
       expect(json['started_at'], '2026-11-23T18:05:00+01:00');
     });
 
-    test('JournalEntry: metrics mit null und unbekannten Schlüsseln', () {
+    test('JournalEntry: overall_feeling bleibt erhalten, null bleibt null', () {
       final entry = JournalEntry.fromJson(
-        journalJson(
-          metrics: <String, int?>{
-            'energy': 70,
-            'mood': null,
-            'happiness': 100,
-            'sleep': 55,
-          },
-          text: null,
-        ),
+        journalJson(overallFeeling: 60, text: null),
       );
-      expect(entry.metrics['energy'], 70);
-      expect(entry.metrics['mood'], isNull);
-      expect(entry.metrics['sleep'], 55);
+      expect(entry.overallFeeling, 60);
       expect(entry.text, isNull);
 
       final json =
           jsonDecode(jsonEncode(entry.toJson())) as Map<String, dynamic>;
-      final metrics = json['metrics'] as Map<String, dynamic>;
-      expect(metrics['mood'], isNull);
-      expect(metrics['energy'], 70);
+      expect(json['overall_feeling'], 60);
       expect(json['text'], isNull);
+      // Das alte metrics-Objekt wird nicht mehr geschrieben.
+      expect(json.containsKey('metrics'), isFalse);
+    });
+
+    test('JournalEntry: Grenzen 0 und 100 sowie fehlender Wert', () {
+      expect(
+        JournalEntry.fromJson(journalJson(overallFeeling: 0)).overallFeeling,
+        0,
+      );
+      expect(
+        JournalEntry.fromJson(journalJson(overallFeeling: 100)).overallFeeling,
+        100,
+      );
+      final missing = JournalEntry.fromJson(
+        jsonDecode(jsonEncode(journalJson(overallFeeling: null)))
+            as Map<String, dynamic>,
+      );
+      expect(missing.overallFeeling, isNull);
+
+      final roundtrip = JournalEntry.fromJson(
+        jsonDecode(jsonEncode(missing.toJson())) as Map<String, dynamic>,
+      );
+      expect(roundtrip.overallFeeling, isNull);
     });
 
     test('AppState enthält alle fünf Top-Level-Felder', () {
