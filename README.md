@@ -103,14 +103,19 @@ Theme-Farbe `#0F172A`, `display: standalone`) und läuft komplett lokal ohne Kon
 - **Updates:** Nach einem neuen Deploy die App einmal **komplett schließen und neu
   öffnen** – erst dann ist die neue Version aktiv. (Bewusst keine eigene
   Update-Banner-Logik.)
-- **Offline (Stand heute eingeschränkt):** `flutter build web --release` erzeugt
-  weiterhin `flutter_service_worker.js`, Flutter 3.44 hat den eingebauten
-  Service-Worker-Cache aber abgekündigt (flutter/flutter#156910): die erzeugte Datei
-  meldet sich beim Aktivieren selbst wieder ab, es gibt also keinen
-  Framework-seitigen Offline-Cache mehr. Die Registrierung ist in
-  `flutter_bootstrap.js` aktiv, die App hängt damit nur am HTTP-Cache des Browsers.
-  Ein verlässlicher Offline-Start braucht einen eigenen Service Worker
-  (Folgeaufgabe, nicht Teil dieser Phase).
+- **Offline:** Die App funktioniert nach dem ersten Aufruf offline. Dafür sorgt
+  der eigene Service Worker [`web/sw.js`](web/sw.js): Er wird von
+  `web/index.html` registriert und legt Startseite, `main.dart.js` und die
+  Icons in einem Cache ab. HTML, `flutter_bootstrap.js`, `main.dart.js` und
+  `manifest.json` werden network-first geladen (online immer frisch, offline
+  aus dem Cache), alle übrigen Dateien cache-first.
+  `web/flutter_bootstrap.js` registriert Flutters Stub-Worker bewusst **nicht**
+  mehr: Flutter 3.44 hat den eingebauten Service-Worker-Cache abgekündigt
+  (flutter/flutter#156910), die erzeugte `flutter_service_worker.js` meldet
+  sich beim Aktivieren selbst ab und würde die eigene Registrierung ersetzen.
+  Beim Deploy einer neuen Version lädt die App beim nächsten kompletten
+  Neustart die neue Fassung; der Cache wird dabei über die Version in
+  `CACHE_NAME` erneuert.
 
 ## Android
 

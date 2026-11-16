@@ -31,7 +31,7 @@
           "sport": "bike",
           "type": "Schwellen-Intervalle",
           "optional": false,
-          "planned_duration_seconds": 4500,
+          "planned_duration_seconds": 3300,
           "instructions": "Nach dem Einfahren 3× 5 min bei Schwellenleistung, dazwischen 3 min locker treten. Ruhig ausfahren.",
           "structure": {
             "warmup_seconds": 900,

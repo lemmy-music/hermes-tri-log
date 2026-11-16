@@ -27,5 +27,19 @@
 </head>
 <body>
   <script src="flutter_bootstrap.js" async></script>
+
+  <!--
+    Eigener Service Worker: Offline-Betrieb nach dem ersten Aufruf und
+    echte PWA-Installation (WebAPK). Flutters Stub-Worker wird in
+    flutter_bootstrap.js bewusst nicht registriert (siehe web/sw.js).
+    Relativer Pfad + Scope, damit localhost und GitHub Pages beide laufen.
+  -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(function (error) {
+        console.warn('Service Worker konnte nicht registriert werden:', error);
+      });
+    }
+  </script>
 </body>
 </html>
