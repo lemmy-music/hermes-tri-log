@@ -315,6 +315,10 @@ class _ActivityEntrySheetState extends State<ActivityEntrySheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
+                    if (_isPlanned) ...<Widget>[
+                      _PlanBlock(entry: widget.planned!),
+                      const SizedBox(height: 16),
+                    ],
                     if (!_isPlanned) ...<Widget>[
                       DropdownButtonFormField<Sport>(
                         key: const Key('sportDropdown'),
@@ -525,6 +529,89 @@ class _ActivityEntrySheetState extends State<ActivityEntrySheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Zeigt beim Erfassen, was geplant war: Typ, Sport/Plan-Titel, Plan-Dauer,
+/// Struktur-Kurzfassung und die vollständige Beschreibung (ohne Kürzung).
+///
+/// Nur für geplante Sitzungen gedacht – ungeplante Einheiten haben keinen Plan.
+class _PlanBlock extends StatelessWidget {
+  const _PlanBlock({required this.entry});
+
+  final TodaySession entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final session = entry.session;
+    final type = session.type.trim().isEmpty
+        ? session.sport.labelDe
+        : session.type;
+    final planTitle = entry.plan.title.trim();
+    final summary = session.structureSummaryText;
+    final instructions = session.instructions?.trim() ?? '';
+    final sportAndPlan = planTitle.isEmpty
+        ? session.sport.labelDe
+        : '${session.sport.labelDe} · $planTitle';
+
+    return Container(
+      key: const Key('plannedSummary'),
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            'Planung',
+            style: theme.textTheme.labelSmall?.copyWith(
+              letterSpacing: 0.8,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(type, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 2),
+          Text(
+            sportAndPlan,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Text(
+            'Plan: ${formatMinutesWithUnit(session.plannedDurationSeconds)}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          if (summary.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Icon(
+                  Icons.timeline,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(summary, style: theme.textTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ],
+          if (instructions.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            Text(instructions, style: theme.textTheme.bodyMedium),
+          ],
+        ],
       ),
     );
   }

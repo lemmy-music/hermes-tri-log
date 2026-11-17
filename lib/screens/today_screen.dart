@@ -252,12 +252,15 @@ class _SessionCard extends StatelessWidget {
               ],
               if (instructions != null && instructions.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 8),
-                Text(
-                  instructions,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                // Bewusst ohne maxLines/ellipsis: die Plan-Beschreibung soll
+                // vollständig lesbar sein (Zeilenumbrüche bleiben erhalten).
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(
+                    instructions,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -275,8 +278,6 @@ class _SessionCard extends StatelessWidget {
                     Expanded(
                       child: Text(
                         notes,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontStyle: FontStyle.italic,

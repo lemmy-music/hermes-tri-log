@@ -11,28 +11,47 @@ import 'fixtures.dart';
 void main() {
   final today = DateTime(2026, 11, 23, 9);
 
-  Future<AppRepository> buildRepository() async {
+  Future<AppRepository> buildRepository({
+    bool withPlan = true,
+    String? instructions,
+    Map<String, dynamic>? structure,
+  }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final repository = AppRepository(
       clock: () => today,
       saveDebounce: const Duration(milliseconds: 1),
     );
     await repository.load();
-    repository.importPlans(
-      repository.parseImport(
-        documentJson(
-          plans: <Map<String, dynamic>>[
-            planJson(sessions: <Map<String, dynamic>>[sessionJson()]),
-          ],
+    if (withPlan) {
+      repository.importPlans(
+        repository.parseImport(
+          documentJson(
+            plans: <Map<String, dynamic>>[
+              planJson(
+                sessions: <Map<String, dynamic>>[
+                  sessionJson(instructions: instructions, structure: structure),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-    await repository.flush();
+      );
+      await repository.flush();
+    }
     return repository;
   }
 
-  Future<AppRepository> pumpApp(WidgetTester tester) async {
-    final repository = await buildRepository();
+  Future<AppRepository> pumpApp(
+    WidgetTester tester, {
+    bool withPlan = true,
+    String? instructions,
+    Map<String, dynamic>? structure,
+  }) async {
+    final repository = await buildRepository(
+      withPlan: withPlan,
+      instructions: instructions,
+      structure: structure,
+    );
     await tester.pumpWidget(TriLogApp(repository: repository));
     await tester.pumpAndSettle();
     return repository;
@@ -157,5 +176,128 @@ void main() {
     expect(activity.sport, 'bike');
     expect(activity.elapsedDurationSeconds, 2400);
     expect(activity.status.name, 'completed');
+  });
+
+  // ─── Volle Plan-Beschreibung (Karte + Sheet) ──────────────────────────────
+
+  const longInstructions =
+      'Einschwimmen: 400 m locker, danach 8× 50 m Technik mit ruhiger Atmung.\n'
+      'Hauptteil: 6× 100 m im Zug um die 1:45, dazwischen 30 s Pause – Fokus '
+      'auf lange Wasserlage und gleichmäßigen Rhythmus.\n'
+      'Abschluss: 200 m ausschwimmen, 5 Minuten Schulter mobilisieren. '
+      'Bei Müdigkeit den Umfang kürzen – Qualität vor Menge.';
+
+  const structureJson = <String, dynamic>{
+    'warmup_seconds': 600,
+    'repetitions': 3,
+    'work_seconds': 300,
+    'recovery_seconds': 180,
+    'cooldown_seconds': 1140,
+  };
+
+  testWidgets('Karte zeigt eine lange Beschreibung vollständig', (
+    tester,
+  ) async {
+    expect(longInstructions.length, greaterThan(300));
+    await pumpApp(tester, instructions: longInstructions);
+
+    final finder = find.text(longInstructions);
+    expect(finder, findsOneWidget);
+
+    final text = tester.widget<Text>(finder);
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
+    // Zeilenumbrüche bleiben erhalten.
+    expect(text.data, contains('\n'));
+  });
+
+  testWidgets('Karte zeigt eine lange Ist-Notiz vollständig', (tester) async {
+    const longNotes =
+        'Beine schwer, aber Technik lief.\n'
+        'Nach 30 Minuten kurz locker gemacht, danach noch 10 Minuten '
+        'ausgeschwommen. Schulter rechts etwas zwicken – beobachten.';
+
+    final repository = await buildRepository();
+    final plan = repository.state.plans.single;
+    final session = plan.sessions.single;
+    repository.saveActivityForSession(
+      plan: plan,
+      session: session,
+      status: ActivityStatus.completed,
+      elapsedDurationSeconds: 2700,
+      notes: longNotes,
+    );
+    await repository.flush();
+
+    await tester.pumpWidget(TriLogApp(repository: repository));
+    await tester.pumpAndSettle();
+
+    final finder = find.text(longNotes);
+    expect(finder, findsOneWidget);
+    final text = tester.widget<Text>(finder);
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNot(TextOverflow.ellipsis));
+  });
+
+  testWidgets(
+    'Sheet zeigt Plan-Block mit vollständiger Beschreibung, Dauer und Struktur',
+    (tester) async {
+      await pumpApp(
+        tester,
+        instructions: longInstructions,
+        structure: structureJson,
+      );
+
+      await tester.tap(find.text('Technik'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Einheit erfassen'), findsOneWidget);
+      final block = find.byKey(const Key('plannedSummary'));
+      expect(block, findsOneWidget);
+
+      final instructionsInSheet = find.descendant(
+        of: block,
+        matching: find.text(longInstructions),
+      );
+      expect(instructionsInSheet, findsOneWidget);
+      expect(tester.widget<Text>(instructionsInSheet).maxLines, isNull);
+      expect(
+        tester.widget<Text>(instructionsInSheet).overflow,
+        isNot(TextOverflow.ellipsis),
+      );
+      expect(
+        find.descendant(of: block, matching: find.text('Plan: 45 min')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: block, matching: find.textContaining('3× 5 min')),
+        findsOneWidget,
+      );
+
+      // Speichern bleibt erreichbar und der Plan-Block bleibt sichtbar.
+      await tester.tap(find.byKey(const Key('saveButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('sheetFeedback')), findsOneWidget);
+      expect(find.byKey(const Key('plannedSummary')), findsOneWidget);
+      expect(
+        find.descendant(of: block, matching: find.text(longInstructions)),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('Ungeplante Einheit zeigt keinen Plan-Block im Sheet', (
+    tester,
+  ) async {
+    await pumpApp(tester, withPlan: false);
+
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Einheit erfassen'), findsOneWidget);
+    expect(find.byKey(const Key('plannedSummary')), findsNothing);
+    expect(find.textContaining('Plan:'), findsNothing);
+    expect(find.textContaining('Planung'), findsNothing);
   });
 }
