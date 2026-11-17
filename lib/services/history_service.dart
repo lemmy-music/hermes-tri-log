@@ -9,7 +9,35 @@ import '../utils/formats.dart';
 /// Aufbau (Maps statt quadratischer Suche pro Zeile).
 
 /// Wählbarer Zeitraum im Verlauf.
+///
+/// Alle Zeiträume liegen als **Zeitscheibe um heute**: „7 Tage“ sind heute −7
+/// bis heute +7 (15 Kalendertage), „30 Tage“ entsprechend ±30. „Alles“ reicht
+/// vom frühesten bis zum spätesten Datum mit Inhalt, mindestens aber ±7 – damit
+/// die Liste nie leer wirkt und der heutige Tag immer als Anker existiert.
 enum HistoryRange { last7Days, last30Days, all }
+
+/// Inklusiver Kalendertag-Bereich (jeweils 00:00 des ersten/letzten Tages).
+class HistoryWindow {
+  const HistoryWindow({required this.from, required this.to});
+
+  final DateTime from;
+  final DateTime to;
+
+  /// Anzahl der enthaltenen Kalendertage (beide Grenzen inklusiv).
+  int get dayCount =>
+      DateTime(
+        to.year,
+        to.month,
+        to.day,
+      ).difference(DateTime(from.year, from.month, from.day)).inDays +
+      1;
+
+  bool contains(DateTime date) {
+    final day = DateTime(date.year, date.month, date.day);
+    return !day.isBefore(DateTime(from.year, from.month, from.day)) &&
+        !day.isAfter(DateTime(to.year, to.month, to.day));
+  }
+}
 
 extension HistoryRangeX on HistoryRange {
   String get labelDe => switch (this) {
@@ -18,20 +46,40 @@ extension HistoryRangeX on HistoryRange {
     HistoryRange.all => 'Alles',
   };
 
-  /// Erster Tag des Zeitraums (00:00) oder `null` für „Alles“.
-  DateTime? startDate(DateTime today) {
-    final day = DateTime(today.year, today.month, today.day);
-    return switch (this) {
-      HistoryRange.last7Days => DateTime(day.year, day.month, day.day - 6),
-      HistoryRange.last30Days => DateTime(day.year, day.month, day.day - 29),
-      HistoryRange.all => null,
-    };
-  }
+  /// Halbe Breite der Zeitscheibe in Tagen (`null` bei „Alles“).
+  int? get halfSpanDays => switch (this) {
+    HistoryRange.last7Days => 7,
+    HistoryRange.last30Days => 30,
+    HistoryRange.all => null,
+  };
 
-  /// Letzter Tag des Zeitraums (00:00) oder `null` für „Alles“.
-  DateTime? endDate(DateTime today) {
-    if (this == HistoryRange.all) return null;
-    return DateTime(today.year, today.month, today.day);
+  /// Konkreter Bereich um [today].
+  ///
+  /// [contentDates] (alle Tage mit Sitzung/Aktivität/Tagebucheintrag) wirkt nur
+  /// bei [HistoryRange.all]: dort bestimmt der Inhalt die Grenzen, mindestens
+  /// aber heute ±7.
+  HistoryWindow window({
+    required DateTime today,
+    Iterable<DateTime> contentDates = const <DateTime>[],
+  }) {
+    final day = DateTime(today.year, today.month, today.day);
+
+    final span = halfSpanDays;
+    if (span != null) {
+      return HistoryWindow(
+        from: DateTime(day.year, day.month, day.day - span),
+        to: DateTime(day.year, day.month, day.day + span),
+      );
+    }
+
+    var from = DateTime(day.year, day.month, day.day - 7);
+    var to = DateTime(day.year, day.month, day.day + 7);
+    for (final content in contentDates) {
+      final contentDay = DateTime(content.year, content.month, content.day);
+      if (contentDay.isBefore(from)) from = contentDay;
+      if (contentDay.isAfter(to)) to = contentDay;
+    }
+    return HistoryWindow(from: from, to: to);
   }
 }
 
@@ -74,7 +122,9 @@ class HistorySessionRecord {
   String? get deltaLabelDe => durationDeltaLabel(plannedSeconds, actualSeconds);
 }
 
-/// Ein Kalendertag mit Inhalt (geplante Sitzung, Aktivität oder Tagebucheintrag).
+/// Ein Kalendertag im Verlauf (geplante Sitzung, Aktivität oder
+/// Tagebucheintrag). Der heutige Tag ist immer enthalten – auch ohne Inhalt,
+/// damit er als Anker für die Zentrierung existiert.
 class HistoryDayRecord {
   const HistoryDayRecord({
     required this.dateIso,
@@ -82,6 +132,8 @@ class HistoryDayRecord {
     this.sessions = const <HistorySessionRecord>[],
     this.unplanned = const <Activity>[],
     this.journal = const <JournalEntry>[],
+    this.isToday = false,
+    this.isFuture = false,
   });
 
   final String dateIso;
@@ -93,6 +145,12 @@ class HistoryDayRecord {
 
   /// Tagebucheinträge des Tages, aufsteigend nach Zeitstempel.
   final List<JournalEntry> journal;
+
+  /// Kalendertag ist heute (Anker der Liste).
+  final bool isToday;
+
+  /// Kalendertag liegt nach heute – geplant, bewusst gedämpft dargestellt.
+  final bool isFuture;
 
   /// Gesamtbefinden des letzten Eintrags des Tages (`null` = nicht erfasst).
   int? get lastFeeling => journal.isEmpty ? null : journal.last.overallFeeling;
@@ -112,6 +170,7 @@ class RangeSummary {
     this.partial = 0,
     this.skipped = 0,
     this.unknown = 0,
+    this.plannedInFuture = 0,
     this.actualSeconds,
     this.plannedSeconds,
   });
@@ -121,20 +180,26 @@ class RangeSummary {
   final int skipped;
 
   /// Geplante Einheiten ohne jede Aufzeichnung – UNBEKANNT, nicht „ausgelassen“.
+  /// Zählt nur Tage ≤ heute (Zukunft ist nicht „offen“).
   final int unknown;
+
+  /// Geplante Einheiten nach heute – bewusst kein Status, nur „geplant“.
+  final int plannedInFuture;
 
   /// Summe der tatsächlichen Dauern (nur wo Werte existieren, ohne
   /// „ausgelassen“), sonst `null`.
   final int? actualSeconds;
 
-  /// Summe der geplanten Dauern (nur wo Werte existieren), sonst `null`.
+  /// Summe der geplanten Dauern der Tage ≤ heute (nur wo Werte existieren),
+  /// sonst `null`. Zukunft zählt hier bewusst nicht mit.
   final int? plannedSeconds;
 
   int get total => completed + partial + skipped + unknown;
 
   String get countsLabelDe =>
       '$completed erledigt · $partial teilweise · $skipped ausgelassen · '
-      '$unknown offen';
+      '$unknown offen'
+      '${plannedInFuture > 0 ? ' · $plannedInFuture geplant (Zukunft)' : ''}';
 
   String get minutesLabelDe =>
       'Ist: ${formatMinutesWithUnit(actualSeconds)} / '
@@ -145,19 +210,18 @@ class RangeSummary {
 // Ableitung der Tage mit Inhalt
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Alle Tage mit Inhalt innerhalb [range], neueste zuerst.
+/// Alle Tage im Zeitraum, **aufsteigend** (Vergangenheit oben, Zukunft unten).
 ///
 /// Inhalte: geplante Sitzungen (nur neueste Plan-Revision), ungeplante
 /// Aktivitäten und Tagebucheinträge. Eine Sitzung mit einer Aktivität an einem
 /// anderen Kalendertag bleibt am Sitzungstag – die Aktivität gehört zur Sitzung.
+/// Der heutige Tag ist immer enthalten (auch ohne Inhalt), damit der Verlauf
+/// ihn zentrieren kann.
 List<HistoryDayRecord> buildHistoryDays({
   required AppState state,
   required HistoryRange range,
   required DateTime today,
 }) {
-  final fromIso = _isoOrNull(range.startDate(today));
-  final toIso = _isoOrNull(range.endDate(today));
-
   // 1:1-Regel wie im Repository: die erste Aktivität je Sitzung zählt.
   final activityBySessionId = <String, Activity>{};
   for (final activity in state.activities) {
@@ -169,7 +233,6 @@ List<HistoryDayRecord> buildHistoryDays({
   final sessionsByDate = <String, List<HistorySessionRecord>>{};
   for (final plan in state.latestPlans) {
     for (final session in plan.sessions) {
-      if (!_inRange(session.date, fromIso, toIso)) continue;
       sessionsByDate
           .putIfAbsent(session.date, () => <HistorySessionRecord>[])
           .add(
@@ -187,28 +250,48 @@ List<HistoryDayRecord> buildHistoryDays({
     if (activity.plannedSessionId != null) continue;
     final local = DateTime.tryParse(activity.startedAt)?.toLocal();
     if (local == null) continue;
-    final dateIso = formatDateIso(local);
-    if (!_inRange(dateIso, fromIso, toIso)) continue;
-    unplannedByDate.putIfAbsent(dateIso, () => <Activity>[]).add(activity);
+    unplannedByDate
+        .putIfAbsent(formatDateIso(local), () => <Activity>[])
+        .add(activity);
   }
 
   final journalByDate = <String, List<JournalEntry>>{};
   for (final entry in state.journal) {
     final local = DateTime.tryParse(entry.timestamp)?.toLocal();
     if (local == null) continue;
-    final dateIso = formatDateIso(local);
-    if (!_inRange(dateIso, fromIso, toIso)) continue;
-    journalByDate.putIfAbsent(dateIso, () => <JournalEntry>[]).add(entry);
+    journalByDate
+        .putIfAbsent(formatDateIso(local), () => <JournalEntry>[])
+        .add(entry);
   }
 
-  final dates = <String>{
-    ...sessionsByDate.keys,
-    ...unplannedByDate.keys,
-    ...journalByDate.keys,
-  }.toList()..sort((a, b) => b.compareTo(a));
+  // Alle Tage mit Inhalt (unabhängig vom Zeitraum) – nur „Alles“ braucht sie
+  // als Grenzen.
+  final contentDates = <DateTime>[
+    for (final dateIso in <String>{
+      ...sessionsByDate.keys,
+      ...unplannedByDate.keys,
+      ...journalByDate.keys,
+    })
+      ?parseIsoDate(dateIso),
+  ];
+  final window = range.window(today: today, contentDates: contentDates);
+
+  final todayIso = formatDateIso(today);
+  final dates =
+      <String>{
+          ...sessionsByDate.keys,
+          ...unplannedByDate.keys,
+          ...journalByDate.keys,
+        }.where((dateIso) {
+          final date = parseIsoDate(dateIso);
+          return date != null && window.contains(date);
+        }).toSet()
+        ..add(todayIso);
+
+  final sortedDates = dates.toList()..sort();
 
   final days = <HistoryDayRecord>[];
-  for (final dateIso in dates) {
+  for (final dateIso in sortedDates) {
     final date = parseIsoDate(dateIso);
     if (date == null) continue;
     final sessions =
@@ -225,6 +308,50 @@ List<HistoryDayRecord> buildHistoryDays({
         sessions: sessions,
         unplanned: unplanned,
         journal: journal,
+        isToday: dateIso == todayIso,
+        isFuture: dateIso.compareTo(todayIso) > 0,
+      ),
+    );
+  }
+  return days;
+}
+
+/// Geplante Sitzungen der nächsten [dayCount] Kalendertage (heute+1 … heute+n),
+/// gruppiert nach Tag und aufsteigend. Tage ohne Sitzung fehlen komplett – eine
+/// leere Liste heißt „nichts geplant“.
+List<HistoryDayRecord> buildUpcomingDays({
+  required AppState state,
+  required DateTime today,
+  int dayCount = 7,
+}) {
+  final day = DateTime(today.year, today.month, today.day);
+  final fromIso = formatDateIso(DateTime(day.year, day.month, day.day + 1));
+  final toIso = formatDateIso(
+    DateTime(day.year, day.month, day.day + dayCount),
+  );
+
+  final sessionsByDate = <String, List<HistorySessionRecord>>{};
+  for (final plan in state.latestPlans) {
+    for (final session in plan.sessions) {
+      if (session.date.compareTo(fromIso) < 0) continue;
+      if (session.date.compareTo(toIso) > 0) continue;
+      sessionsByDate
+          .putIfAbsent(session.date, () => <HistorySessionRecord>[])
+          .add(HistorySessionRecord(plan: plan, session: session));
+    }
+  }
+
+  final dates = sessionsByDate.keys.toList()..sort();
+  final days = <HistoryDayRecord>[];
+  for (final dateIso in dates) {
+    final date = parseIsoDate(dateIso);
+    if (date == null) continue;
+    days.add(
+      HistoryDayRecord(
+        dateIso: dateIso,
+        date: date,
+        sessions: sessionsByDate[dateIso]!..sort(_compareSessionRecords),
+        isFuture: true,
       ),
     );
   }
@@ -233,18 +360,25 @@ List<HistoryDayRecord> buildHistoryDays({
 
 /// Zählt geplante Einheiten und summiert Minuten über [days].
 ///
-/// Minuten werden ausschließlich aus vorhandenen Werten gebildet – fehlende
-/// Angaben bleiben fehlend (`null`), sie werden nicht als 0 gezählt.
+/// Statuszähler und Plan-Minuten betrachten ausschließlich Tage ≤ heute –
+/// Zukunft ist „geplant“, nicht „offen“. Minuten werden ausschließlich aus
+/// vorhandenen Werten gebildet: fehlende Angaben bleiben fehlend (`null`), sie
+/// werden nicht als 0 gezählt.
 RangeSummary summarizeHistory(Iterable<HistoryDayRecord> days) {
   var completed = 0;
   var partial = 0;
   var skipped = 0;
   var unknown = 0;
+  var plannedInFuture = 0;
   int? actualSeconds;
   int? plannedSeconds;
 
   for (final day in days) {
     for (final record in day.sessions) {
+      if (day.isFuture) {
+        plannedInFuture++;
+        continue;
+      }
       switch (record.status) {
         case null:
           unknown++;
@@ -269,9 +403,63 @@ RangeSummary summarizeHistory(Iterable<HistoryDayRecord> days) {
     partial: partial,
     skipped: skipped,
     unknown: unknown,
+    plannedInFuture: plannedInFuture,
     actualSeconds: actualSeconds,
     plannedSeconds: plannedSeconds,
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Flache Zeilenliste (für die Liste und die Zentrierung auf heute)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Eine Zeile der Verlaufsliste: Tageskopf, Sitzung oder ungeplante Einheit.
+sealed class HistoryRow {
+  const HistoryRow(this.day);
+
+  final HistoryDayRecord day;
+}
+
+class HistoryDayRow extends HistoryRow {
+  const HistoryDayRow(super.day);
+}
+
+class HistorySessionRow extends HistoryRow {
+  const HistorySessionRow(super.day, this.record);
+
+  final HistorySessionRecord record;
+}
+
+class HistoryUnplannedRow extends HistoryRow {
+  const HistoryUnplannedRow(super.day, this.activity);
+
+  final Activity activity;
+}
+
+/// Flacht [days] (aufsteigend) in Zeilen ab: erst der Tageskopf, dann die
+/// geplanten Sitzungen, dann die ungeplanten Einheiten des Tages.
+List<HistoryRow> buildHistoryRows(Iterable<HistoryDayRecord> days) {
+  final rows = <HistoryRow>[];
+  for (final day in days) {
+    rows.add(HistoryDayRow(day));
+    for (final record in day.sessions) {
+      rows.add(HistorySessionRow(day, record));
+    }
+    for (final activity in day.unplanned) {
+      rows.add(HistoryUnplannedRow(day, activity));
+    }
+  }
+  return rows;
+}
+
+/// Index des heutigen Tageskopfs in [rows] (`-1`, falls nicht vorhanden).
+/// Reine Funktion – die Liste wird damit auf heute zentriert.
+int indexOfTodayRow(List<HistoryRow> rows) {
+  for (var index = 0; index < rows.length; index++) {
+    final row = rows[index];
+    if (row is HistoryDayRow && row.day.isToday) return index;
+  }
+  return -1;
 }
 
 /// Sortiert Sitzungen eines Tages: Schwimmen → Rad → Laufen → Kraft →
@@ -282,14 +470,6 @@ int _compareSessionRecords(HistorySessionRecord a, HistorySessionRecord b) {
   );
   if (bySport != 0) return bySport;
   return a.session.type.compareTo(b.session.type);
-}
-
-String? _isoOrNull(DateTime? date) => date == null ? null : formatDateIso(date);
-
-bool _inRange(String dateIso, String? fromIso, String? toIso) {
-  if (fromIso != null && dateIso.compareTo(fromIso) < 0) return false;
-  if (toIso != null && dateIso.compareTo(toIso) > 0) return false;
-  return true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

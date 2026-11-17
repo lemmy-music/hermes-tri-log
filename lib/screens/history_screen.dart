@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../models/models.dart';
 import '../services/history_service.dart';
 import '../state/app_repository.dart';
 import '../utils/formats.dart';
 import 'activity_sheet.dart';
+import 'plan_detail_sheet.dart';
 import 'today_screen.dart' show sportIcon;
 
-/// Verlaufs-Tab: geplant vs. tatsächlich über einen wählbaren Zeitraum.
+/// Verlaufs-Tab als Zeitscheibe um heute (−7/+7, −30/+30 oder „Alles“).
 ///
-/// Alle Ableitungen (Tage mit Inhalt, Zähler, Minuten, Sortierung) kommen aus
-/// [buildHistoryDays]/[summarizeHistory] – im `build()` steht keine Logik.
+/// Alle Ableitungen (Zeitraum, Tage, Zeilen, Zähler, Minuten, Index des
+/// heutigen Tages) kommen aus [HistoryRangeX.window], [buildHistoryDays],
+/// [buildHistoryRows], [indexOfTodayRow] und [summarizeHistory] – im `build()`
+/// steht keine Logik.
+///
+/// Die Liste ist aufsteigend (Vergangenheit oben, Zukunft unten) und wird mit
+/// `ScrollablePositionedList` auf den heutigen Tag zentriert: die Liste erhält
+/// oben und unten je eine halbe Viewport-Höhe Padding, damit der heutige
+/// Tageskopf auch bei kurzem Inhalt exakt auf `initialAlignment` liegen kann.
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
 
@@ -21,6 +30,15 @@ class HistoryScreen extends StatefulWidget {
 
 class _HistoryScreenState extends State<HistoryScreen> {
   HistoryRange _range = HistoryRange.last30Days;
+
+  /// Korrigiert die geschätzte Startposition nach dem ersten Frame: der
+  /// heutige Tag sitzt danach exakt auf [_todayAlignment].
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  bool _centerPending = true;
+
+  /// Leicht über der Mitte: der heutige Block (Kopf + Zeilen) wirkt dadurch
+  /// insgesamt mittig, nicht nur seine Oberkante.
+  static const double _todayAlignment = 0.45;
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +51,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
       today: today,
     );
     final summary = summarizeHistory(days);
-    final rows = _buildRows(days);
+    final rows = buildHistoryRows(days);
+    final hasContent = days.any((day) => day.hasContent);
+    final todayIndex = indexOfTodayRow(rows);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -56,8 +76,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                 ],
                 selected: <HistoryRange>{_range},
-                onSelectionChanged: (selection) =>
-                    setState(() => _range = selection.first),
+                onSelectionChanged: (selection) => setState(() {
+                  _range = selection.first;
+                  // Neuer Zeitraum → erneut auf heute zentrieren.
+                  _centerPending = true;
+                }),
               ),
               const SizedBox(height: 12),
               _SummaryCard(summary: summary, days: days.length),
@@ -65,38 +88,80 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
         ),
         Expanded(
-          child: rows.isEmpty
-              ? ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                  children: const <Widget>[_HistoryEmptyState()],
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-                  itemCount: rows.length,
-                  itemBuilder: (context, index) {
-                    final row = rows[index];
-                    return switch (row) {
-                      _HistoryDayRow() => _DayHeader(day: row.day),
-                      _HistorySessionRow() => _SessionTile(
-                        record: row.record,
-                        onTap: () => _openSession(row.day, row.record),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              // Halbe Viewport-Höhe oben/unten: nur so kann der heutige
+              // Tageskopf auch dann auf 45 % liegen, wenn der Zeitraum wenige
+              // Zeilen enthält (sonst würde die Scroll-Position geklemmt).
+              final filler = constraints.maxHeight * 0.5;
+              if (_centerPending) {
+                _centerPending = false;
+                _jumpToToday(todayIndex);
+              }
+              return ScrollablePositionedList.builder(
+                // Neuer Key je Zeitraum → die Liste wird frisch mit dem
+                // heutigen Tag als Startposition aufgebaut.
+                key: ValueKey<String>('historyList-${_range.name}'),
+                itemScrollController: _itemScrollController,
+                initialScrollIndex: todayIndex < 0 ? 0 : todayIndex,
+                initialAlignment: _todayAlignment,
+                padding: EdgeInsets.fromLTRB(16, filler, 16, filler + 24),
+                itemCount: rows.length + (hasContent ? 0 : 1),
+                itemBuilder: (context, index) {
+                  if (index >= rows.length) return const _HistoryEmptyState();
+                  return switch (rows[index]) {
+                    HistoryDayRow(:final day) => _DayHeader(day: day),
+                    HistorySessionRow(:final day, :final record) =>
+                      _SessionTile(
+                        day: day,
+                        record: record,
+                        onTap: () => _openSession(day, record),
                       ),
-                      _HistoryUnplannedRow() => _UnplannedTile(
-                        activity: row.activity,
-                        onTap: () => _openUnplanned(row.day, row.activity),
+                    HistoryUnplannedRow(:final day, :final activity) =>
+                      _UnplannedTile(
+                        activity: activity,
+                        onTap: () => _openUnplanned(day, activity),
                       ),
-                    };
-                  },
-                ),
+                  };
+                },
+              );
+            },
+          ),
         ),
       ],
     );
   }
 
-  /// Öffnet das bestehende Erfassungs-Sheet. Bei einer Sitzung ohne
-  /// Aufzeichnung wird `started_at` auf das Sitzungsdatum mit der aktuellen
-  /// Uhrzeit (lokaler Offset) gesetzt – nicht auf „jetzt“.
+  /// Zentriert die Liste nach dem Layout auf den heutigen Tageskopf.
+  ///
+  /// Der Sprung passiert zweimal: direkt nach dem ersten Frame und noch einmal
+  /// kurz danach. `ScrollablePositionedList` korrigiert seine geschätzte
+  /// Startposition selbst über mehrere Frames – der zweite Sprung setzt die
+  /// exakte Position danach.
+  void _jumpToToday(int index) {
+    if (index < 0) return;
+    void jump() {
+      if (!mounted || !_itemScrollController.isAttached) return;
+      _itemScrollController.jumpTo(index: index, alignment: _todayAlignment);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+    Future<void>.delayed(const Duration(milliseconds: 250), jump);
+  }
+
+  /// Vergangenheit/heute → Erfassungs-Sheet, Zukunft → rein lesendes Sheet
+  /// „Planung ansehen“ (kein Erfassen/Abhaken für zukünftige Tage).
   void _openSession(HistoryDayRecord day, HistorySessionRecord record) {
+    if (day.isFuture) {
+      showPlanDetailSheet(
+        context,
+        plan: record.plan,
+        session: record.session,
+        date: day.date,
+      );
+      return;
+    }
+
     final repository = context.read<AppRepository>();
     final now = repository.now;
     final startedAt =
@@ -124,43 +189,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 }
 
-/// Flacht Tage in Zeilen (Tageskopf, Sitzungen, ungeplante Einheiten).
-List<_HistoryRow> _buildRows(List<HistoryDayRecord> days) {
-  final rows = <_HistoryRow>[];
-  for (final day in days) {
-    rows.add(_HistoryDayRow(day));
-    for (final record in day.sessions) {
-      rows.add(_HistorySessionRow(day, record));
-    }
-    for (final activity in day.unplanned) {
-      rows.add(_HistoryUnplannedRow(day, activity));
-    }
-  }
-  return rows;
-}
-
-sealed class _HistoryRow {
-  const _HistoryRow();
-}
-
-class _HistoryDayRow extends _HistoryRow {
-  const _HistoryDayRow(this.day);
-  final HistoryDayRecord day;
-}
-
-class _HistorySessionRow extends _HistoryRow {
-  const _HistorySessionRow(this.day, this.record);
-  final HistoryDayRecord day;
-  final HistorySessionRecord record;
-}
-
-class _HistoryUnplannedRow extends _HistoryRow {
-  const _HistoryUnplannedRow(this.day, this.activity);
-  final HistoryDayRecord day;
-  final Activity activity;
-}
-
-/// Tageskopf: Wochentag, Datum + Indikatoren für das Tagebuch.
+/// Tageskopf: Wochentag/Datum, „Heute“-Kennzeichnung, „· geplant“ für die
+/// Zukunft und Indikatoren für das Tagebuch.
 class _DayHeader extends StatelessWidget {
   const _DayHeader({required this.day});
 
@@ -170,59 +200,133 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final feeling = day.lastFeeling;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              formatDateGerman(day.date),
-              key: ValueKey<String>('history-day-${day.dateIso}'),
-              style: theme.textTheme.titleSmall,
-            ),
-          ),
-          if (feeling != null) ...<Widget>[
-            Container(
-              key: ValueKey<String>('history-feeling-${day.dateIso}'),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(999),
-              ),
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final futureColor = muted.withValues(alpha: 0.55);
+
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Flexible(
               child: Text(
-                formatPercent(feeling),
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onPrimaryContainer,
+                formatDateGerman(day.date),
+                key: ValueKey<String>('history-day-${day.dateIso}'),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: day.isFuture ? futureColor : null,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (day.isToday) ...<Widget>[
+              const SizedBox(width: 8),
+              Container(
+                key: const Key('history-today-chip'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  'Heute',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimary,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-          ],
-          if (day.hasJournalText)
-            Tooltip(
-              message: 'Tagebucheintrag vorhanden',
-              child: Icon(
-                Icons.sticky_note_2_outlined,
-                size: 16,
-                color: theme.colorScheme.onSurfaceVariant,
+            ],
+            if (day.isFuture) ...<Widget>[
+              const SizedBox(width: 6),
+              Text(
+                '· geplant',
+                style: theme.textTheme.labelSmall?.copyWith(color: futureColor),
               ),
+            ],
+            if (feeling != null) ...<Widget>[
+              const SizedBox(width: 6),
+              Container(
+                key: ValueKey<String>('history-feeling-${day.dateIso}'),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  formatPercent(feeling),
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+            ],
+            if (day.hasJournalText) ...<Widget>[
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'Tagebucheintrag vorhanden',
+                child: Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: 16,
+                  color: muted,
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (day.isToday && !day.hasContent)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              'keine Einheit geplant',
+              key: const Key('history-today-empty'),
+              style: theme.textTheme.bodySmall?.copyWith(color: muted),
             ),
-        ],
+          ),
+      ],
+    );
+
+    if (!day.isToday) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(0, 18, 0, 6),
+        child: content,
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 6),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.primaryContainer.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: theme.colorScheme.primary.withValues(alpha: 0.55),
+          ),
+        ),
+        child: content,
       ),
     );
   }
 }
 
-/// Eine geplante Sitzung mit Plan/Ist-Vergleich.
+/// Eine geplante Sitzung. Vergangenheit/heute mit Plan/Ist-Vergleich,
+/// Zukunft gedämpft und ohne Status (nur „geplant“).
 class _SessionTile extends StatelessWidget {
-  const _SessionTile({required this.record, required this.onTap});
+  const _SessionTile({
+    required this.day,
+    required this.record,
+    required this.onTap,
+  });
 
+  final HistoryDayRecord day;
   final HistorySessionRecord record;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final future = day.isFuture;
+    final titleColor = future ? muted.withValues(alpha: 0.6) : null;
+    final detailColor = future ? muted.withValues(alpha: 0.55) : muted;
     final status = record.status;
     final planned = 'Plan ${formatMinutesWithUnit(record.plannedSeconds)}';
     final actual = record.actualSeconds;
@@ -236,7 +340,9 @@ class _SessionTile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Card(
         elevation: 0,
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: future ? 0.2 : 0.4,
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: ValueKey<String>('history-session-${record.session.id}'),
@@ -248,7 +354,7 @@ class _SessionTile extends StatelessWidget {
                 Icon(
                   sportIcon(record.session.sport),
                   size: 22,
-                  color: theme.colorScheme.primary,
+                  color: future ? detailColor : theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -257,7 +363,9 @@ class _SessionTile extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         record.title,
-                        style: theme.textTheme.bodyLarge,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: titleColor,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -265,23 +373,33 @@ class _SessionTile extends StatelessWidget {
                       Text(
                         actualText == null ? planned : '$planned · $actualText',
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
+                          color: detailColor,
                         ),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
-                if (status == null)
+                if (future)
+                  // Zukunft hat keinen Status – neutral „geplant“, NICHT
+                  // „ohne Aufzeichnung“ (das wäre bei Zukunft falsch).
+                  Text(
+                    'geplant',
+                    key: ValueKey<String>(
+                      'history-planned-${record.session.id}',
+                    ),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: future ? muted.withValues(alpha: 0.55) : muted,
+                    ),
+                  )
+                else if (status == null)
                   // UNBEKANNT – bewusst keine Wertung und kein Badge.
                   Text(
                     kNoRecordingLabelDe,
                     key: ValueKey<String>(
                       'history-unknown-${record.session.id}',
                     ),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    style: theme.textTheme.labelSmall?.copyWith(color: muted),
                   )
                 else
                   _StatusBadge(status: status),
@@ -420,7 +538,7 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-/// Zusammenfassung des Zeitraums.
+/// Zusammenfassung des Zeitraums (Statuszähler nur für Tage ≤ heute).
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({required this.summary, required this.days});
 

@@ -15,6 +15,7 @@ void main() {
     bool withPlan = true,
     String? instructions,
     Map<String, dynamic>? structure,
+    List<Map<String, dynamic>>? extraSessions,
   }) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final repository = AppRepository(
@@ -30,6 +31,7 @@ void main() {
               planJson(
                 sessions: <Map<String, dynamic>>[
                   sessionJson(instructions: instructions, structure: structure),
+                  ...?extraSessions,
                 ],
               ),
             ],
@@ -46,11 +48,20 @@ void main() {
     bool withPlan = true,
     String? instructions,
     Map<String, dynamic>? structure,
+    List<Map<String, dynamic>>? extraSessions,
+    bool tall = false,
   }) async {
+    if (tall) {
+      tester.view.physicalSize = const Size(1000, 2200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
     final repository = await buildRepository(
       withPlan: withPlan,
       instructions: instructions,
       structure: structure,
+      extraSessions: extraSessions,
     );
     await tester.pumpWidget(TriLogApp(repository: repository));
     await tester.pumpAndSettle();
@@ -299,5 +310,86 @@ void main() {
     expect(find.byKey(const Key('plannedSummary')), findsNothing);
     expect(find.textContaining('Plan:'), findsNothing);
     expect(find.textContaining('Planung'), findsNothing);
+  });
+
+  // ─── Kommende Tage (Vorschau der nächsten 7 Kalendertage) ─────────────────
+
+  const futureInstructions =
+      'Lockerer Dauerlauf, Puls unter 145.\n'
+      'Zum Schluss 4× 20 Sekunden Steigerung, dazwischen traben.';
+
+  List<Map<String, dynamic>> futureSessions() => <Map<String, dynamic>>[
+    sessionJson(
+      id: 's3',
+      date: '2026-11-26',
+      sport: 'run',
+      type: 'Dauerlauf',
+      optional: true,
+      plannedDurationSeconds: 2400,
+      instructions: futureInstructions,
+      structure: <String, dynamic>{
+        'warmup_seconds': 600,
+        'repetitions': 3,
+        'work_seconds': 300,
+        'cooldown_seconds': 600,
+      },
+    ),
+  ];
+
+  testWidgets('Kommende Tage zeigt nur Tage mit Sitzung', (tester) async {
+    await pumpApp(tester, tall: true, extraSessions: futureSessions());
+
+    expect(find.text('Kommende Tage'), findsOneWidget);
+    // Sitzung in 3 Tagen ist da …
+    expect(
+      find.byKey(const ValueKey<String>('upcoming-day-2026-11-26')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('upcoming-session-s3')),
+      findsOneWidget,
+    );
+    // … Tage ohne Sitzung (morgen, übermorgen) fehlen komplett.
+    expect(
+      find.byKey(const ValueKey<String>('upcoming-day-2026-11-24')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('upcoming-day-2026-11-25')),
+      findsNothing,
+    );
+    // Kompakt: Dauer + optional-Kennzeichnung.
+    expect(find.text('40 min'), findsOneWidget);
+    expect(find.text('optional'), findsWidgets);
+  });
+
+  testWidgets('Ohne geplante Zukunft fehlt der Abschnitt komplett', (
+    tester,
+  ) async {
+    await pumpApp(tester, tall: true);
+
+    expect(find.text('Kommende Tage'), findsNothing);
+  });
+
+  testWidgets('Tap auf kommende Sitzung öffnet das Lese-Sheet', (tester) async {
+    await pumpApp(tester, tall: true, extraSessions: futureSessions());
+
+    await tester.tap(find.byKey(const ValueKey<String>('upcoming-session-s3')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Planung ansehen'), findsOneWidget);
+    // Datum steht im Sheet-Kopf und (hinter dem Sheet) im Tageskopf der Liste.
+    expect(find.text('Do, 26.11.2026'), findsWidgets);
+    expect(find.text('Laufen · Wintergrundlage'), findsOneWidget);
+    expect(find.text('Plan: 40 min'), findsWidgets);
+    expect(find.text(futureInstructions), findsOneWidget);
+    expect(find.textContaining('3× 5 min'), findsOneWidget);
+    // Rein lesend: kein Speichern, keine Statusauswahl, keine Eingabefelder.
+    expect(find.byKey(const Key('saveButton')), findsNothing);
+    expect(find.byKey(const Key('statusSegments')), findsNothing);
+    expect(find.byKey(const Key('durationField')), findsNothing);
+    await tester.tap(find.byKey(const Key('planDetailCloseButton')));
+    await tester.pumpAndSettle();
+    expect(find.text('Planung ansehen'), findsNothing);
   });
 }

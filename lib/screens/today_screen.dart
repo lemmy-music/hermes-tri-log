@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/models.dart';
+import '../services/history_service.dart';
 import '../state/app_repository.dart';
 import '../utils/formats.dart';
 import 'activity_sheet.dart';
+import 'plan_detail_sheet.dart';
 
 /// Zeigt ausschließlich den heutigen Tag: geplante Einheiten zum Abhaken,
-/// darunter optional ungeplante Einheiten („Zusätzlich“).
+/// darunter optional ungeplante Einheiten („Zusätzlich“) und – mit deutlichem
+/// Abstand – eine kompakte, gedämpfte Vorschau der nächsten 7 Kalendertage
+/// („Kommende Tage“).
 class TodayScreen extends StatelessWidget {
   const TodayScreen({super.key});
 
@@ -17,6 +21,9 @@ class TodayScreen extends StatelessWidget {
     final today = repository.now;
     final sessions = repository.todaySessions;
     final unplanned = repository.todayUnplannedActivities;
+    // Nur Tage mit geplanten Sitzungen; Tage ohne Sitzung fehlen komplett und
+    // eine leere Liste blendet den ganzen Abschnitt aus.
+    final upcoming = buildUpcomingDays(state: repository.state, today: today);
     final theme = Theme.of(context);
 
     var completed = 0;
@@ -85,7 +92,116 @@ class TodayScreen extends StatelessWidget {
               ),
           ],
         ],
+        // Vorschau der nächsten Tage: bewusst mit Abstand + Trennlinie, damit
+        // die Zukunft nicht mit dem heutigen Tag konkurriert.
+        if (upcoming.isNotEmpty) ...<Widget>[
+          const SizedBox(height: 26),
+          const Divider(height: 1),
+          const SizedBox(height: 16),
+          Text(
+            'Kommende Tage',
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          for (final day in upcoming) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              formatDateGerman(day.date),
+              key: ValueKey<String>('upcoming-day-${day.dateIso}'),
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 6),
+            _UpcomingDayCard(day: day),
+          ],
+        ],
       ],
+    );
+  }
+}
+
+/// Kompakte, gedämpfte Liste der Sitzungen eines kommenden Tages. Ein Tap
+/// öffnet das rein lesende Sheet „Planung ansehen“ – kein Erfassen, kein
+/// Abhaken für zukünftige Tage.
+class _UpcomingDayCard extends StatelessWidget {
+  const _UpcomingDayCard({required this.day});
+
+  final HistoryDayRecord day;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      color: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        children: <Widget>[
+          for (var index = 0; index < day.sessions.length; index++) ...<Widget>[
+            if (index > 0) const Divider(height: 1),
+            _UpcomingSessionRow(day: day, record: day.sessions[index]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _UpcomingSessionRow extends StatelessWidget {
+  const _UpcomingSessionRow({required this.day, required this.record});
+
+  final HistoryDayRecord day;
+  final HistorySessionRecord record;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return InkWell(
+      key: ValueKey<String>('upcoming-session-${record.session.id}'),
+      onTap: () => showPlanDetailSheet(
+        context,
+        plan: record.plan,
+        session: record.session,
+        date: day.date,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        child: Row(
+          children: <Widget>[
+            Icon(sportIcon(record.session.sport), size: 18, color: muted),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                record.title,
+                style: theme.textTheme.bodyMedium?.copyWith(color: muted),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (record.session.optional) ...<Widget>[
+              Text(
+                'optional',
+                style: theme.textTheme.labelSmall?.copyWith(color: muted),
+              ),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              formatMinutesWithUnit(record.plannedSeconds),
+              style: theme.textTheme.bodySmall?.copyWith(color: muted),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 18, color: muted),
+          ],
+        ),
+      ),
     );
   }
 }

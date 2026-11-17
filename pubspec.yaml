@@ -44,6 +44,11 @@ dependencies:
   # der offizielle Nachfolger (wird von file_picker ohnehin mitgebracht).
   web: ^1.1.1
 
+  # Verlauf: positioniert die Liste exakt auf den heutigen Tag
+  # (initialScrollIndex/initialAlignment) – mit einer normalen ListView wäre
+  # die Zentrierung nur über geschätzte Offsets möglich.
+  scrollable_positioned_list: ^0.3.8
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

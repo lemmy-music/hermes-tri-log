@@ -15,7 +15,8 @@ Minimalistische Flutter-App zum **Anzeigen und Abhaken von Triathlon-Trainingspl
 - Material 3, deutsche UI, ThemeMode.system
 - Zielplattformen: Web (GitHub Pages) und Android (später APK mit lokalen Notifications)
 - `provider` (State), `shared_preferences` (Persistenz), `file_picker` (Import),
-  `web` (nur für den Download im Browser)
+  `web` (nur für den Download im Browser), `scrollable_positioned_list`
+  (Positionierung des Verlaufs auf den heutigen Tag, siehe unten)
 - Kein Codegen, kein drift/sqflite, kein intl
 
 ## Lokale Befehle
@@ -79,6 +80,43 @@ eine reine Plan-Datei, die der Importer fehlerfrei annimmt.
 - **Ungeplante Einheit:** FAB „+“ auf dem Heute-Screen → gleiches Sheet mit
   Sport-Auswahl; der Eintrag erscheint im Abschnitt „Zusätzlich“.
 - Der Kopf fasst zusammen: „X von Y erledigt“ (plus „· Z teilweise“).
+- **Kommende Tage:** unter dem heutigen Block, durch Abstand und Trennlinie
+  abgesetzt, stehen die geplanten Sitzungen der **nächsten 7 Kalendertage**
+  (heute+1 bis heute+7), gruppiert nach Tag. Tage ohne Sitzung fehlen, und ohne
+  geplante Zukunft entfällt der Abschnitt komplett. Die Zeilen sind bewusst
+  kompakt und gedämpft (Umriss-Karte, gedämpfte Schrift) – die Zukunft soll
+  nicht mit heute konkurrieren. Ein Tap öffnet das **rein lesende** Sheet
+  „Planung ansehen“ (Datum, Typ, Sport · Plantitel, `Plan: X min`,
+  Struktur-Kurzfassung, vollständige Beschreibung) – **kein** Erfassen,
+  Abhaken oder Speichern für zukünftige Tage.
+
+## Bedienung (Tab „Verlauf“)
+
+Der Verlauf ist eine **Zeitscheibe um heute**, aufsteigend sortiert
+(Vergangenheit oben, Zukunft unten):
+
+- **7 Tage** = heute −7 bis heute +7 (15 Kalendertage), **30 Tage** = ±30
+  (Standard), **Alles** = vom frühesten bis zum spätesten Datum mit Inhalt,
+  mindestens aber ±7 – die Liste ist damit nie leer.
+- Der heutige Tag ist der **Anker**: beim Öffnen des Tabs und bei jedem
+  Zeitraumwechsel wird die Liste so positioniert, dass der heutige Tageskopf
+  vertikal mittig im Viewport steht. Technisch über
+  `ScrollablePositionedList` mit `initialScrollIndex` (Index des heutigen
+  Tageskopfs aus `indexOfTodayRow`) und `initialAlignment`; oben und unten
+  liegt je eine halbe Viewport-Höhe Padding, damit die Position auch bei
+  kurzem Inhalt erreichbar ist. Heute ist immer in der Liste – ohne Inhalt mit
+  dem Hinweis „keine Einheit geplant“.
+- **Heute** ist mit Chip „Heute“ und primary-farbener Umrandung/tönung
+  hervorgehoben. **Zukunft** (Datum > heute) ist gedämpft (Text in
+  `onSurfaceVariant` mit ~55 % Deckkraft), der Tageskopf trägt „· geplant“ und
+  die Zeile neutral „geplant“ – nie „keine Aufzeichnung“, denn das wäre bei
+  Zukunft falsch.
+- Tap auf eine Sitzungszeile: Vergangenheit/heute → Erfassungs-Sheet,
+  Zukunft → rein lesendes Sheet „Planung ansehen“.
+- Die Summary-Card zählt Status (erledigt/teilweise/ausgelassen/offen) **nur
+  für Tage ≤ heute** und ergänzt „· N geplant (Zukunft)“. Die Plan-Minuten
+  stammen ebenfalls nur aus Sitzungen ≤ heute; „Ist: A min / Plan: B min“,
+  sonst „–“.
 
 Der JSON-Export enthält immer alle Pläne (inkl. aller Revisionen) als Kontext; ein
 optionaler Zeitraumfilter (`from`/`to`, inklusiv) wirkt nur auf Aktivitäten und

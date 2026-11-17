@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_log/main.dart';
+import 'package:tri_log/services/history_service.dart';
 import 'package:tri_log/state/app_repository.dart';
 
 import 'fixtures.dart';
@@ -16,7 +18,15 @@ void main() {
     List<Map<String, dynamic>>? sessions,
     List<Map<String, dynamic>>? activities,
     List<Map<String, dynamic>>? journal,
+    bool tall = false,
   }) async {
+    if (tall) {
+      // Genug Platz, damit auch tiefere Zeilen ohne Scrollen gebaut werden.
+      tester.view.physicalSize = const Size(1000, 2200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+    }
     SharedPreferences.setMockInitialValues(<String, Object>{});
     final repository = AppRepository(
       clock: () => today,
@@ -187,7 +197,9 @@ void main() {
     expect(find.text('So, 22.11.2026'), findsOneWidget);
   });
 
-  testWidgets('Zeitraum-Auswahl filtert die Tagesliste', (tester) async {
+  testWidgets('Zeitraum-Auswahl filtert die Tagesliste (Standard 30)', (
+    tester,
+  ) async {
     await pumpApp(
       tester,
       sessions: <Map<String, dynamic>>[
@@ -197,18 +209,128 @@ void main() {
     );
     await openHistoryTab(tester);
 
-    // Standard: 30 Tage → beide Tage sichtbar.
+    // Standard: „30 Tage“ (−30/+30) → beide Tage im Zeitraum.
+    final segments = tester.widget<SegmentedButton<HistoryRange>>(
+      find.byKey(const Key('historyRangeSegments')),
+    );
+    expect(segments.selected.single, HistoryRange.last30Days);
     expect(find.text('So, 22.11.2026'), findsOneWidget);
-    expect(find.text('Fr, 30.10.2026'), findsOneWidget);
+    expect(
+      find.text('0 erledigt · 0 teilweise · 0 ausgelassen · 2 offen'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('7 Tage'));
     await tester.pumpAndSettle();
     expect(find.text('So, 22.11.2026'), findsOneWidget);
-    expect(find.text('Fr, 30.10.2026'), findsNothing);
+    // 30.10. liegt außerhalb von heute ±7 → nur noch eine Sitzung im Zeitraum.
+    expect(
+      find.text('0 erledigt · 0 teilweise · 0 ausgelassen · 1 offen'),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Alles'));
     await tester.pumpAndSettle();
-    expect(find.text('Fr, 30.10.2026'), findsOneWidget);
+    // „Alles“ reicht bis zum frühesten Inhalt zurück.
+    expect(
+      find.text('0 erledigt · 0 teilweise · 0 ausgelassen · 2 offen'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('heutiger Tag ist mit „Heute“ gekennzeichnet und zentriert', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      sessions: <Map<String, dynamic>>[
+        sessionJson(id: 's1', date: '2026-11-20'),
+        sessionJson(id: 's2', date: '2026-11-22'),
+        sessionJson(id: 's3', date: '2026-11-23'),
+      ],
+    );
+    await openHistoryTab(tester);
+
+    final chip = find.byKey(const Key('history-today-chip'));
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(of: chip, matching: find.text('Heute')),
+      findsOneWidget,
+    );
+
+    // Zentrierung: die Liste startet exakt auf dem heutigen Tageskopf.
+    // Zeilen: 20. Kopf, 20. Sitzung, 22. Kopf, 22. Sitzung, 23. Kopf …
+    final list = tester.widget<ScrollablePositionedList>(
+      find.byType(ScrollablePositionedList),
+    );
+    expect(list.initialScrollIndex, 4);
+    expect(list.initialAlignment, 0.45);
+  });
+
+  testWidgets('Zukunftszeile zeigt „geplant“, nicht „keine Aufzeichnung“', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      sessions: <Map<String, dynamic>>[
+        sessionJson(id: 'zukunft', date: '2026-11-26'),
+      ],
+    );
+    await openHistoryTab(tester);
+
+    const counts =
+        '0 erledigt · 0 teilweise · 0 ausgelassen · 0 offen · '
+        '1 geplant (Zukunft)';
+    expect(find.text(counts), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('history-planned-zukunft')),
+      findsOneWidget,
+    );
+    expect(find.text('keine Aufzeichnung'), findsNothing);
+    expect(find.textContaining('geplant'), findsWidgets);
+  });
+
+  testWidgets('Tap auf eine Zukunfts-Sitzung öffnet das Lese-Sheet', (
+    tester,
+  ) async {
+    const instructions =
+        'Ruhiger Dauerlauf im Grundlagenbereich.\n'
+        'Puls unter 145 halten, die letzten 10 Minuten locker auslaufen.';
+    await pumpApp(
+      tester,
+      tall: true,
+      sessions: <Map<String, dynamic>>[
+        sessionJson(
+          id: 'zukunft',
+          date: '2026-11-26',
+          sport: 'run',
+          type: 'Dauerlauf',
+          instructions: instructions,
+          structure: <String, dynamic>{
+            'warmup_seconds': 600,
+            'repetitions': 3,
+            'work_seconds': 300,
+            'cooldown_seconds': 600,
+          },
+        ),
+      ],
+    );
+    await openHistoryTab(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('history-session-zukunft')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Planung ansehen'), findsOneWidget);
+    expect(find.text('Do, 26.11.2026'), findsWidgets);
+    expect(find.text(instructions), findsOneWidget);
+    expect(find.text('Plan: 45 min'), findsOneWidget);
+    expect(find.textContaining('3× 5 min'), findsOneWidget);
+    // Rein lesend: kein Speichern, kein Status, keine Eingabefelder.
+    expect(find.byKey(const Key('saveButton')), findsNothing);
+    expect(find.byKey(const Key('statusSegments')), findsNothing);
+    expect(find.text('Einheit erfassen'), findsNothing);
   });
 
   testWidgets('Tagebucheintrag erscheint nur als Indikator im Verlauf', (
