@@ -124,6 +124,43 @@ void main() {
     expect(activity.startedAt, contains('2026-11-20T'));
   });
 
+  testWidgets('Sheet aus dem Verlauf zeigt den Plan-Block', (tester) async {
+    const instructions =
+        'Ruhiger Dauerlauf im Grundlagenbereich.\n'
+        'Puls unter 145 halten, die letzten 10 Minuten locker auslaufen.';
+    await pumpApp(
+      tester,
+      sessions: <Map<String, dynamic>>[
+        sessionJson(
+          id: 's1',
+          date: '2026-11-20',
+          instructions: instructions,
+          structure: <String, dynamic>{
+            'warmup_seconds': 600,
+            'repetitions': 3,
+            'work_seconds': 300,
+            'cooldown_seconds': 600,
+          },
+        ),
+      ],
+    );
+    await openHistoryTab(tester);
+
+    await tester.tap(find.byKey(const ValueKey<String>('history-session-s1')));
+    await tester.pumpAndSettle();
+
+    final block = find.byKey(const Key('plannedSummary'));
+    expect(block, findsOneWidget);
+    expect(
+      find.descendant(of: block, matching: find.text(instructions)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: block, matching: find.text('Plan: 45 min')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('ungeplante Einheit erscheint mit Kennzeichnung „ungeplant“', (
     tester,
   ) async {
