@@ -416,23 +416,6 @@ class _EntryTile extends StatelessWidget {
                         ),
                       ),
                     ],
-                    // Automatisch abgeschlossene Einträge sind sichtbar
-                    // gekennzeichnet – der Athlet hat sie nicht bestätigt.
-                    if (autoFinalized) ...<Widget>[
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          'automatisch abgeschlossen',
-                          key: ValueKey<String>(
-                            'journal-entry-auto-${entry.id}',
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: muted,
-                          ),
-                        ),
-                      ),
-                    ],
                     const Spacer(),
                     if (entry.isFinalized) ...<Widget>[
                       Tooltip(
@@ -453,6 +436,16 @@ class _EntryTile extends StatelessWidget {
                     Icon(Icons.edit_outlined, size: 16, color: muted),
                   ],
                 ),
+                // Eigene Statuszeile statt Häkchen-Tooltip: der Abschluss kam
+                // von der App, der Athlet hat ihn nicht bestätigt.
+                if (autoFinalized) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    'automatisch abgeschlossen',
+                    key: ValueKey<String>('journal-entry-auto-${entry.id}'),
+                    style: theme.textTheme.labelSmall?.copyWith(color: muted),
+                  ),
+                ],
                 if (text != null && text.isNotEmpty) ...<Widget>[
                   const SizedBox(height: 6),
                   Text(
