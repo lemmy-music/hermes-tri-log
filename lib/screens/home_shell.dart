@@ -7,6 +7,7 @@ import 'data_screen.dart';
 import 'history_screen.dart';
 import 'journal_screen.dart';
 import 'journal_sheet.dart';
+import 'settings_screen.dart';
 import 'today_screen.dart';
 
 /// Rahmen mit NavigationBar: Heute · Tagebuch · Verlauf · Daten.
@@ -26,7 +27,19 @@ class _HomeShellState extends State<HomeShell> {
     final warning = repository.storageWarning;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Tri-Log')),
+      appBar: AppBar(
+        title: const Text('Tri-Log'),
+        actions: <Widget>[
+          IconButton(
+            key: const Key('settingsButton'),
+            tooltip: 'Einstellungen',
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const SettingsScreen()),
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: <Widget>[
           if (warning != null)

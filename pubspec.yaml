@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Deutsche MaterialLocalizations (Zeitwahl, Dialoge) – ohne dieses Paket
+  # zeigt der TimePicker AM/PM und kann unter `locale: de` werfen.
+  flutter_localizations:
+    sdk: flutter
+
   # State-Management (AppRepository extends ChangeNotifier)
   provider: ^6.1.5
 
