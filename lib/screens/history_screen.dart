@@ -270,6 +270,18 @@ class _DayHeader extends StatelessWidget {
                 ),
               ),
             ],
+            if (day.hasFinalizedJournal) ...<Widget>[
+              const SizedBox(width: 4),
+              Tooltip(
+                message: 'Tagesnotiz abgeschlossen',
+                child: Icon(
+                  Icons.check_circle,
+                  key: ValueKey<String>('history-journal-final-${day.dateIso}'),
+                  size: 14,
+                  color: muted,
+                ),
+              ),
+            ],
           ],
         ),
         if (day.isToday && !day.hasContent)

@@ -36,7 +36,7 @@ Die App speichert **ein einziges JSON-Dokument** unter dem `shared_preferences`-
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "exported_at": "2026-11-16T20:05:00+01:00",
   "timezone": "Europe/Berlin",
   "plans": [],
@@ -58,6 +58,11 @@ Die App speichert **ein einziges JSON-Dokument** unter dem `shared_preferences`-
   angegeben). Bewusst undifferenziert – keine Aufschlüsselung in Energie/Stimmung;
   das frühere `metrics`-Objekt wird nicht mehr gelesen (Import: Hinweis, kein Fehler)
   und nicht mehr geschrieben.
+- **Zeitpunkte** eines Tagebucheintrags sind getrennt: `timestamp` = erstellt
+  (unveränderlich), `updated_at` = zuletzt geändert (bei jedem Speichern neu),
+  `finalized_at` = Tagesnotiz abgeschlossen (`null` = Entwurf). Fehlt
+  `updated_at` (Altbestand aus Format `1.0`), gilt `timestamp` als letzte Änderung.
+  Import akzeptiert `schema_version` `1.0` und `1.1`; die App schreibt `1.1`.
 - Pro geplanter Sitzung gibt es höchstens **eine** Aktivität (`planned_session_id`);
   ein erneutes Abhaken/Bearbeiten aktualisiert sie, statt eine zweite anzulegen.
 - `null` heißt „nicht erfasst“ und ist **nicht** 0.
@@ -89,6 +94,27 @@ eine reine Plan-Datei, die der Importer fehlerfrei annimmt.
   „Planung ansehen“ (Datum, Typ, Sport · Plantitel, `Plan: X min`,
   Struktur-Kurzfassung, vollständige Beschreibung) – **kein** Erfassen,
   Abhaken oder Speichern für zukünftige Tage.
+
+## Bedienung (Tab „Tagebuch“)
+
+Ganz oben, deutlich vor der chronologischen Liste, steht die **Tagesnotiz für
+heute** – genau ein Eintrag pro Tag:
+
+- **Noch nichts notiert:** Karte „Tagesnotiz“ antippen → Sheet zum Anlegen.
+- **Entwurf** (`finalized_at == null`): Badge „Entwurf“, Textvorschau (3 Zeilen),
+  Gesamtbefinden-Chip und „zuletzt geändert HH:MM“. Antippen → weiterschreiben.
+  „Speichern“ setzt `updated_at` neu, der Eintrag bleibt Entwurf; das Sheet bleibt
+  offen und bestätigt im Sheet.
+- **Abgeschlossen** (`finalized_at` gesetzt): Häkchen + „abgeschlossen um HH:MM“,
+  gedämpfte Optik. Text und Slider bleiben editierbar; erneutes Speichern
+  aktualisiert nur `updated_at`, der Abschlusszeitpunkt bleibt stehen.
+  „Wieder öffnen“ setzt `finalized_at` zurück auf `null` – der Eintrag bleibt.
+- Mehrere Einträge pro Tag sind im Datenmodell erlaubt (Altbestand/Import); die
+  Karte nimmt dann den **neuesten** des Tages und löscht nichts. Dieser Eintrag
+  erscheint nicht zusätzlich in der Liste; alle anderen Tage stehen wie gewohnt
+  chronologisch darunter (mit „zuletzt HH:MM“, wenn sich der Eintrag geändert hat,
+  und einem kleinen Häkchen bei abgeschlossenen Notizen). Der Verlauf markiert
+  abgeschlossene Tagesnotizen ebenfalls mit einem Häkchen.
 
 ## Bedienung (Tab „Verlauf“)
 

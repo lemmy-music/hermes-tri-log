@@ -84,7 +84,7 @@ void main() {
     repository.importPlans(repository.parseImport(documentJson()));
 
     final json = repository.exportJson();
-    expect(json, contains('"schema_version": "1.0"'));
+    expect(json, contains('"schema_version": "1.1"'));
     expect(json, contains('"timezone": "Europe/Berlin"'));
     expect(repository.exportFileNameJson(), 'tri-log-export-2026-11-23.json');
 

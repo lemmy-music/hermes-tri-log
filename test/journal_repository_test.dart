@@ -236,4 +236,191 @@ void main() {
     ]);
     expect(sorted.map((e) => e.id), <String>['neu', 'alt', 'kaputt']);
   });
+
+  group('Tagesnotiz (updated_at/finalized_at)', () {
+    /// Repository mit steuerbarer Uhr (für Änderungs-/Abschlusszeiten).
+    ({AppRepository repository, void Function(DateTime) setNow}) buildClocked(
+      DateTime start,
+    ) {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      var current = start;
+      final repository = AppRepository(
+        clock: () => current,
+        saveDebounce: const Duration(milliseconds: 1),
+      );
+      return (
+        repository: repository,
+        setNow: (DateTime next) => current = next,
+      );
+    }
+
+    test(
+      'saveJournalEntry setzt updated_at, timestamp bleibt erhalten',
+      () async {
+        final clocked = buildClocked(DateTime(2026, 11, 23, 7, 12, 30));
+        final repository = clocked.repository;
+        await repository.load();
+
+        final created = repository.saveJournalEntry(
+          JournalEntry(
+            id: 'j1',
+            timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12, 30)),
+            overallFeeling: 60,
+            text: 'morgens',
+          ),
+        );
+        expect(
+          DateTime.parse(
+            created.updatedAt!,
+          ).isAtSameMomentAs(DateTime(2026, 11, 23, 7, 12, 30)),
+          isTrue,
+        );
+        expect(created.finalizedAt, isNull);
+
+        clocked.setNow(DateTime(2026, 11, 23, 18, 40));
+        final edited = repository.saveJournalEntry(
+          JournalEntry(
+            id: 'j1',
+            timestamp: created.timestamp,
+            overallFeeling: 55,
+            text: 'morgens, abends ergänzt',
+          ),
+        );
+
+        expect(edited.timestamp, created.timestamp);
+        expect(
+          DateTime.parse(
+            edited.updatedAt!,
+          ).isAtSameMomentAs(DateTime(2026, 11, 23, 18, 40)),
+          isTrue,
+        );
+        expect(repository.state.journal, hasLength(1));
+        expect(
+          repository.journalEntryById('j1')!.text,
+          'morgens, abends ergänzt',
+        );
+
+        repository.dispose();
+      },
+    );
+
+    test(
+      'abschließen setzt finalized_at; späteres Speichern lässt es stehen',
+      () async {
+        final clocked = buildClocked(DateTime(2026, 11, 23, 7, 12));
+        final repository = clocked.repository;
+        await repository.load();
+
+        final created = repository.saveJournalEntry(
+          JournalEntry(
+            id: 'j1',
+            timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+            overallFeeling: 60,
+            text: 'tagsüber',
+          ),
+        );
+
+        clocked.setNow(DateTime(2026, 11, 23, 21, 30));
+        final finalized = repository.finalizeJournalEntry(created);
+        expect(finalized.finalizedAt, isNotNull);
+        expect(
+          DateTime.parse(
+            finalized.finalizedAt!,
+          ).isAtSameMomentAs(DateTime(2026, 11, 23, 21, 30)),
+          isTrue,
+        );
+        expect(finalized.timestamp, created.timestamp);
+        expect(finalized.isFinalized, isTrue);
+
+        // Abgeschlossen + erneut speichern: updated_at neu, finalized_at bleibt.
+        clocked.setNow(DateTime(2026, 11, 23, 22, 5));
+        final reopenedEdit = repository.saveJournalEntry(
+          JournalEntry(
+            id: 'j1',
+            timestamp: finalized.timestamp,
+            finalizedAt: finalized.finalizedAt,
+            overallFeeling: 65,
+            text: 'nachgetragen',
+          ),
+        );
+        expect(reopenedEdit.finalizedAt, finalized.finalizedAt);
+        expect(
+          DateTime.parse(
+            reopenedEdit.updatedAt!,
+          ).isAtSameMomentAs(DateTime(2026, 11, 23, 22, 5)),
+          isTrue,
+        );
+        expect(repository.journalEntryById('j1')!.overallFeeling, 65);
+
+        repository.dispose();
+      },
+    );
+
+    test('wieder öffnen setzt finalized_at auf null, Eintrag bleibt', () async {
+      final clocked = buildClocked(DateTime(2026, 11, 23, 21, 30));
+      final repository = clocked.repository;
+      await repository.load();
+
+      repository.saveJournalEntry(
+        entry(id: 'j1', at: DateTime(2026, 11, 23, 7, 12), feeling: 60),
+      );
+      final finalized = repository.finalizeJournalEntry(
+        repository.journalEntryById('j1')!,
+      );
+      expect(finalized.isFinalized, isTrue);
+
+      clocked.setNow(DateTime(2026, 11, 23, 23, 15));
+      final reopened = repository.reopenJournalEntry(finalized);
+      expect(reopened.finalizedAt, isNull);
+      expect(reopened.isFinalized, isFalse);
+      expect(reopened.timestamp, finalized.timestamp);
+      expect(repository.state.journal, hasLength(1));
+      expect(repository.journalEntryById('j1')!.text, finalized.text);
+
+      repository.dispose();
+    });
+
+    test(
+      'Tagesnotiz nutzt den neuesten Eintrag und legt keinen weiteren an',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+
+        repository.saveJournalEntry(
+          entry(id: 'j-early', at: DateTime(2026, 11, 23, 8), feeling: 70),
+        );
+        repository.saveJournalEntry(
+          entry(id: 'j-late', at: DateTime(2026, 11, 23, 12), feeling: 55),
+        );
+        repository.saveJournalEntry(
+          entry(id: 'j-gestern', at: DateTime(2026, 11, 22, 20), feeling: 40),
+        );
+
+        expect(repository.todayJournalEntry?.id, 'j-late');
+        expect(
+          repository.latestJournalEntryForDate(DateTime(2026, 11, 22))?.id,
+          'j-gestern',
+        );
+
+        // Bearbeiten des neuesten Eintrags ist ein Upsert – kein dritter Eintrag,
+        // nichts wird gelöscht.
+        repository.saveJournalEntry(
+          JournalEntry(
+            id: 'j-late',
+            timestamp: repository.journalEntryById('j-late')!.timestamp,
+            overallFeeling: 60,
+            text: 'weiter geschrieben',
+          ),
+        );
+        expect(repository.state.journal, hasLength(3));
+        expect(
+          repository.journalEntriesForDate(DateTime(2026, 11, 23)),
+          hasLength(2),
+        );
+        expect(repository.todayJournalEntry?.text, 'weiter geschrieben');
+
+        repository.dispose();
+      },
+    );
+  });
 }

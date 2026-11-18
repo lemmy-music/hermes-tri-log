@@ -159,6 +159,10 @@ class HistoryDayRecord {
   bool get hasJournalText =>
       journal.any((entry) => (entry.text?.trim().isNotEmpty) ?? false);
 
+  /// Mindestens ein Tagebucheintrag des Tages ist abgeschlossen
+  /// (`finalized_at` gesetzt) – kleines Häkchen im Tageskopf.
+  bool get hasFinalizedJournal => journal.any((entry) => entry.isFinalized);
+
   bool get hasContent =>
       sessions.isNotEmpty || unplanned.isNotEmpty || journal.isNotEmpty;
 }

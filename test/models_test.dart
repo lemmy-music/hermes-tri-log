@@ -131,6 +131,78 @@ void main() {
       expect(roundtrip.overallFeeling, isNull);
     });
 
+    test('JournalEntry: updated_at/finalized_at überleben den Roundtrip', () {
+      const entry = JournalEntry(
+        id: 'j1',
+        timestamp: '2026-11-23T07:12:00+01:00',
+        updatedAt: '2026-11-23T21:14:00+01:00',
+        finalizedAt: '2026-11-23T21:14:00+01:00',
+        overallFeeling: 70,
+        text: 'Abendnotiz',
+      );
+
+      final json =
+          jsonDecode(jsonEncode(entry.toJson())) as Map<String, dynamic>;
+      expect(json['timestamp'], '2026-11-23T07:12:00+01:00');
+      expect(json['updated_at'], '2026-11-23T21:14:00+01:00');
+      expect(json['finalized_at'], '2026-11-23T21:14:00+01:00');
+
+      final restored = JournalEntry.fromJson(json);
+      expect(restored.timestamp, entry.timestamp);
+      expect(restored.updatedAt, entry.updatedAt);
+      expect(restored.finalizedAt, entry.finalizedAt);
+      expect(restored.isFinalized, isTrue);
+      expect(restored.lastChangedAt, entry.updatedAt);
+    });
+
+    test('JournalEntry: Entwurf schreibt finalized_at explizit als null', () {
+      const draft = JournalEntry(
+        id: 'j2',
+        timestamp: '2026-11-23T07:12:00+01:00',
+        updatedAt: '2026-11-23T18:40:00+01:00',
+        overallFeeling: 60,
+      );
+      final json = draft.toJson();
+      expect(json.containsKey('updated_at'), isTrue);
+      expect(json.containsKey('finalized_at'), isTrue);
+      expect(json['finalized_at'], isNull);
+
+      final restored = JournalEntry.fromJson(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(restored.updatedAt, '2026-11-23T18:40:00+01:00');
+      expect(restored.finalizedAt, isNull);
+      expect(restored.isFinalized, isFalse);
+    });
+
+    test(
+      'JournalEntry: Altbestand ohne neue Felder → null, Fallback timestamp',
+      () {
+        // Schema 1.0: nur id/timestamp/overall_feeling/text.
+        final legacy = JournalEntry.fromJson(<String, dynamic>{
+          'id': 'j-alt',
+          'timestamp': '2026-11-20T20:10:00+01:00',
+          'overall_feeling': 55,
+          'text': 'alt',
+        });
+        expect(legacy.updatedAt, isNull);
+        expect(legacy.finalizedAt, isNull);
+        expect(legacy.isFinalized, isFalse);
+        // Ohne updated_at gilt der Zeitstempel als letzte Änderung.
+        expect(legacy.lastChangedAt, legacy.timestamp);
+
+        final json = legacy.toJson();
+        expect(json['updated_at'], isNull);
+        expect(json['finalized_at'], isNull);
+      },
+    );
+
+    test('kSchemaVersion ist 1.1, 1.0 bleibt akzeptiert', () {
+      expect(kSchemaVersion, '1.1');
+      expect(kAcceptedSchemaVersions, containsAll(<String>['1.0', '1.1']));
+      expect(kAcceptedSchemaVersions, hasLength(2));
+    });
+
     test('AppState enthält alle fünf Top-Level-Felder', () {
       final json = sampleState().toJson();
       expect(
@@ -144,7 +216,7 @@ void main() {
           'journal',
         ]),
       );
-      expect(json['schema_version'], '1.0');
+      expect(json['schema_version'], '1.1');
       expect(json['timezone'], 'Europe/Berlin');
       expect(json['exported_at'], isNull);
     });

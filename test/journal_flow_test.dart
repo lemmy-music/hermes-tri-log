@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_log/main.dart';
 import 'package:tri_log/models/models.dart';
 import 'package:tri_log/state/app_repository.dart';
+import 'package:tri_log/utils/formats.dart';
 
 /// Widget-Flows des Tagebuchs: FAB → Sheet, Speichern, Bearbeiten, Zurücksetzen.
 void main() {
@@ -53,7 +54,8 @@ void main() {
     await tester.tap(find.byKey(const Key('journalFab')));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tagebucheintrag'), findsOneWidget);
+    // Neuer Eintrag am heutigen Tag → „Tagesnotiz“ (Karte + Sheet-Kopf).
+    expect(find.text('Tagesnotiz'), findsWidgets);
     // Neuer Eintrag: Befinden ist NICHT gesetzt.
     expect(find.text('nicht angegeben'), findsOneWidget);
 
@@ -70,7 +72,7 @@ void main() {
     // Rückmeldung IM Sheet, Sheet bleibt offen.
     expect(find.byKey(const Key('journalFeedback')), findsOneWidget);
     expect(find.textContaining('Gespeichert'), findsOneWidget);
-    expect(find.text('Tagebucheintrag'), findsOneWidget);
+    expect(find.text('Tagesnotiz'), findsWidgets);
     expect(repository.state.journal, hasLength(1));
     expect(repository.state.journal.single.overallFeeling, 60);
     expect(repository.state.journal.single.text, 'Guter Tag, Beine frisch.');
@@ -85,10 +87,14 @@ void main() {
     await tester.tap(find.byKey(const Key('journalDoneButton')));
     await tester.pumpAndSettle();
 
+    // Der heutige Eintrag steht in der Tagesnotiz-Karte – nicht zusätzlich in
+    // der chronologischen Liste (also kein Tageskopf mit Datum).
+    expect(find.byKey(const Key('dailyNoteCard')), findsOneWidget);
+    expect(find.byKey(const Key('dailyNoteDraftBadge')), findsOneWidget);
     expect(find.text('60 %'), findsOneWidget);
     expect(find.text('Guter Tag, Beine frisch.'), findsOneWidget);
-    expect(find.text('09:45'), findsOneWidget);
-    expect(find.text('Mo, 23.11.2026'), findsOneWidget);
+    expect(find.textContaining('zuletzt geändert 09:45'), findsOneWidget);
+    expect(find.text('Mo, 23.11.2026'), findsNothing);
   });
 
   testWidgets('Eintrag bearbeiten ändert den Wert, Zeitstempel bleibt', (
@@ -201,5 +207,167 @@ void main() {
     await tester.tap(find.byKey(const Key('journalDoneButton')));
     await tester.pumpAndSettle();
     expect(find.text('Noch keine Einträge'), findsOneWidget);
+  });
+
+  testWidgets(
+    'Ohne heutigen Eintrag zeigt die Karte „Tagesnotiz“ und „Noch nichts notiert“',
+    (tester) async {
+      await pumpApp(tester);
+      await openJournalTab(tester);
+
+      expect(find.byKey(const Key('dailyNoteCard')), findsOneWidget);
+      expect(find.text('Tagesnotiz'), findsOneWidget);
+      expect(find.text('Noch nichts notiert'), findsOneWidget);
+      expect(find.byKey(const Key('dailyNoteDraftBadge')), findsNothing);
+      // Der heutige Tag steht noch nicht als Tageskopf in der Liste.
+      expect(find.text('Mo, 23.11.2026'), findsNothing);
+
+      await tester.tap(find.byKey(const Key('dailyNoteCard')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('journalTextField')), findsOneWidget);
+      // Neue Einträge am heutigen Tag können direkt abgeschlossen werden.
+      expect(find.byKey(const Key('journalFinalizeButton')), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Nach dem Speichern zeigt die Karte „Entwurf“ und „zuletzt geändert“',
+    (tester) async {
+      final repository = await pumpApp(
+        tester,
+        journal: <JournalEntry>[
+          JournalEntry(
+            id: 'j-heute',
+            timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+            overallFeeling: 60,
+            text: 'Früh schon müde',
+          ),
+        ],
+      );
+      await openJournalTab(tester);
+
+      expect(find.byKey(const Key('dailyNoteDraftBadge')), findsOneWidget);
+      expect(find.text('Entwurf'), findsOneWidget);
+      expect(find.text('Früh schon müde'), findsOneWidget);
+      expect(find.textContaining('zuletzt geändert 09:45'), findsOneWidget);
+      // Der Eintrag steht nur in der Karte, nicht zusätzlich in der Liste.
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-j-heute')),
+        findsNothing,
+      );
+
+      // Weiterschreiben: Speichern lässt den Entwurf Entwurf.
+      await tester.tap(find.byKey(const Key('dailyNoteCard')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('journalTextField')),
+        'Früh schon müde, mittags besser.',
+      );
+      await tester.tap(find.byKey(const Key('journalSaveButton')));
+      await tester.pumpAndSettle();
+
+      final saved = repository.journalEntryById('j-heute')!;
+      expect(saved.isFinalized, isFalse);
+      expect(saved.text, 'Früh schon müde, mittags besser.');
+      expect(saved.updatedAt, isNotNull);
+      expect(
+        DateTime.parse(
+          saved.updatedAt!,
+        ).isAtSameMomentAs(DateTime(2026, 11, 23, 9, 45)),
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets(
+    '„Tag abschließen“ setzt finalized_at; die Liste zeigt den Eintrag nicht doppelt',
+    (tester) async {
+      final repository = await pumpApp(
+        tester,
+        journal: <JournalEntry>[
+          JournalEntry(
+            id: 'j-heute',
+            timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+            overallFeeling: 60,
+            text: 'Früh schon müde',
+          ),
+        ],
+      );
+      await openJournalTab(tester);
+
+      await tester.tap(find.byKey(const Key('dailyNoteCard')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('journalFinalizeButton')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('journalFinalizeButton')));
+      await tester.pumpAndSettle();
+
+      // Rückmeldung IM Sheet, Sheet bleibt offen.
+      expect(find.textContaining('Tag abgeschlossen um 09:45'), findsOneWidget);
+      expect(find.byKey(const Key('journalFinalizedNotice')), findsOneWidget);
+      expect(find.text('Abgeschlossen um 09:45'), findsOneWidget);
+      // Button wechselt zu „Wieder öffnen“.
+      expect(find.byKey(const Key('journalFinalizeButton')), findsNothing);
+      expect(find.byKey(const Key('journalReopenButton')), findsOneWidget);
+
+      final saved = repository.journalEntryById('j-heute')!;
+      expect(saved.finalizedAt, isNotNull);
+      expect(
+        DateTime.parse(
+          saved.finalizedAt!,
+        ).isAtSameMomentAs(DateTime(2026, 11, 23, 9, 45)),
+        isTrue,
+      );
+      expect(saved.timestamp, isoWithOffset(DateTime(2026, 11, 23, 7, 12)));
+
+      await tester.tap(find.byKey(const Key('journalDoneButton')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('abgeschlossen um 09:45'), findsOneWidget);
+      expect(find.byKey(const Key('dailyNoteDraftBadge')), findsNothing);
+      // Genau einmal sichtbar: in der Karte, nicht in der chronologischen Liste.
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-j-heute')),
+        findsNothing,
+      );
+      expect(find.text('Früh schon müde'), findsOneWidget);
+    },
+  );
+
+  testWidgets('„Wieder öffnen“ macht die Tagesnotiz wieder zum Entwurf', (
+    tester,
+  ) async {
+    final repository = await pumpApp(
+      tester,
+      journal: <JournalEntry>[
+        JournalEntry(
+          id: 'j-final',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+          finalizedAt: isoWithOffset(DateTime(2026, 11, 23, 9, 45)),
+          overallFeeling: 70,
+          text: 'Abendnotiz',
+        ),
+      ],
+    );
+    await openJournalTab(tester);
+
+    expect(find.textContaining('abgeschlossen um 09:45'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('dailyNoteCard')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('journalReopenButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Wieder geöffnet'), findsOneWidget);
+    expect(repository.journalEntryById('j-final')!.finalizedAt, isNull);
+    expect(repository.journalEntryById('j-final')!.text, 'Abendnotiz');
+
+    await tester.tap(find.byKey(const Key('journalDoneButton')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('dailyNoteDraftBadge')), findsOneWidget);
+    expect(find.textContaining('zuletzt geändert 09:45'), findsOneWidget);
+    expect(find.textContaining('abgeschlossen um'), findsNothing);
   });
 }

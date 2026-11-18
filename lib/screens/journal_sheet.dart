@@ -5,7 +5,7 @@ import '../models/models.dart';
 import '../state/app_repository.dart';
 import '../utils/formats.dart';
 
-/// Öffnet das Bottom Sheet „Tagebucheintrag“.
+/// Öffnet das Bottom Sheet „Tagesnotiz“ (heute) bzw. „Tagebucheintrag“.
 ///
 /// [entry] gesetzt → bestehenden Eintrag bearbeiten (Zeitstempel bleibt).
 /// `null` → neuer Eintrag mit dem aktuellen Zeitpunkt.
@@ -26,7 +26,9 @@ Future<void> showJournalEntrySheet(
 /// (bewusst optional, Start „nicht angegeben“) und ein mehrzeiliges Textfeld.
 ///
 /// Keine Pflichtfelder, Rückmeldung IM Sheet, Sheet bleibt nach dem Speichern
-/// offen. Ein Speichervorgang schreibt genau einen Eintrag.
+/// offen. Ein Speichervorgang schreibt genau einen Eintrag. Für den heutigen
+/// Tag lässt sich die Tagesnotiz zusätzlich abschließen (und wieder öffnen);
+/// Text und Slider bleiben dabei immer editierbar.
 class JournalEntrySheet extends StatefulWidget {
   const JournalEntrySheet({super.key, this.entry});
 
@@ -60,25 +62,69 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
     super.dispose();
   }
 
-  // ─── Aktionen ──────────────────────────────────────────────────────────────
+  // ─── Zustand ───────────────────────────────────────────────────────────────
 
-  void _save() {
+  /// Eintrag gehört zu heute (neuer Eintrag ohne Zeitstempel zählt als heute).
+  bool get _isToday {
+    final reference = DateTime.tryParse(_saved?.timestamp ?? '')?.toLocal();
+    if (reference == null) return true;
+    final now = _repository.now;
+    return reference.year == now.year &&
+        reference.month == now.month &&
+        reference.day == now.day;
+  }
+
+  /// „Tagesnotiz“ für heute, sonst „Tagebucheintrag“.
+  String get _title => _isToday ? 'Tagesnotiz' : 'Tagebucheintrag';
+
+  /// Baut den Eintrag aus dem aktuellen Editorstand.
+  ///
+  /// [finalizedAt] setzt den Abschluss neu; mit [keepFinalized] bleibt der
+  /// bisherige Abschluss-Zeitpunkt unangetastet (normales Speichern eines
+  /// abgeschlossenen Eintrags).
+  JournalEntry _buildEntry({String? finalizedAt, bool keepFinalized = false}) {
+    final nowIso = isoWithOffset(_repository.now);
     final text = _text.text.trim();
-    final entry = JournalEntry(
+    return JournalEntry(
       id: _saved?.id ?? _repository.nextJournalEntryId(),
-      // Bestehende Einträge behalten ihren Zeitstempel.
-      timestamp: _saved?.timestamp ?? isoWithOffset(_repository.now),
+      timestamp: _saved?.timestamp ?? nowIso,
+      updatedAt: nowIso,
+      finalizedAt: keepFinalized ? _saved?.finalizedAt : finalizedAt,
       overallFeeling: _feeling,
       text: text.isEmpty ? null : text,
     );
-    _repository.saveJournalEntry(entry);
+  }
 
-    final feelingLabel = formatPercent(entry.overallFeeling);
+  // ─── Aktionen ──────────────────────────────────────────────────────────────
+
+  void _save() {
+    final stored = _repository.saveJournalEntry(
+      _buildEntry(keepFinalized: true),
+    );
+    final feelingLabel = formatPercent(stored.overallFeeling);
     setState(() {
-      _saved = entry;
+      _saved = stored;
       _feedback = feelingLabel == '–'
           ? 'Gespeichert · Gesamtbefinden nicht angegeben'
           : 'Gespeichert · Gesamtbefinden $feelingLabel';
+    });
+  }
+
+  /// „Tag abschließen“: speichert den aktuellen Stand und setzt `finalized_at`.
+  void _finalize() {
+    final stored = _repository.finalizeJournalEntry(_buildEntry());
+    setState(() {
+      _saved = stored;
+      _feedback = 'Tag abgeschlossen um ${formatTime(stored.finalizedLocal!)}';
+    });
+  }
+
+  /// „Wieder öffnen“: `finalized_at` zurück auf `null`, Eintrag bleibt.
+  void _reopen() {
+    final stored = _repository.reopenJournalEntry(_buildEntry());
+    setState(() {
+      _saved = stored;
+      _feedback = 'Wieder geöffnet – der Eintrag bleibt als Entwurf erhalten.';
     });
   }
 
@@ -125,6 +171,8 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
     final subtitle = reference != null
         ? '${formatDateGerman(reference)} · ${formatTime(reference)}'
         : formatDateGerman(_repository.now);
+    final finalized = _saved?.finalizedLocal;
+    final lastChanged = _saved?.lastChangedLocal;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -144,10 +192,7 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: <Widget>[
-                        Text(
-                          'Tagebucheintrag',
-                          style: theme.textTheme.titleLarge,
-                        ),
+                        Text(_title, style: theme.textTheme.titleLarge),
                         Text(
                           subtitle,
                           style: theme.textTheme.bodySmall?.copyWith(
@@ -192,19 +237,71 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Einträge werden mit exportiert und stehen dem Coach '
-                      'als Kontext zur Verfügung.',
+                      'Den Tag über ergänzen und speichern; abends als '
+                      'Tagesnotiz abschließen. Einträge werden mit exportiert '
+                      'und stehen dem Coach als Kontext zur Verfügung.',
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                    if (finalized != null) ...<Widget>[
+                      const SizedBox(height: 10),
+                      Container(
+                        key: const Key('journalFinalizedNotice'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            Icon(
+                              Icons.task_alt,
+                              size: 18,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Abgeschlossen um ${formatTime(finalized)}'
+                                '${lastChanged != null && !_sameMinute(lastChanged, finalized) ? ' · zuletzt geändert ${formatTime(lastChanged)}' : ''}',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
+            if (_isToday)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                child: finalized == null
+                    ? OutlinedButton.icon(
+                        key: const Key('journalFinalizeButton'),
+                        onPressed: _finalize,
+                        icon: const Icon(Icons.task_alt),
+                        label: const Text('Tag abschließen'),
+                      )
+                    : OutlinedButton.icon(
+                        key: const Key('journalReopenButton'),
+                        onPressed: _reopen,
+                        icon: const Icon(Icons.lock_open),
+                        label: const Text('Wieder öffnen'),
+                      ),
+              ),
             if (_feedback != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                 child: Container(
                   key: const Key('journalFeedback'),
                   padding: const EdgeInsets.symmetric(
@@ -235,6 +332,7 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
                   ),
                 ),
               ),
+            const SizedBox(height: 8),
             const Divider(height: 1),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -272,6 +370,13 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
     );
   }
 }
+
+bool _sameMinute(DateTime a, DateTime b) =>
+    a.year == b.year &&
+    a.month == b.month &&
+    a.day == b.day &&
+    a.hour == b.hour &&
+    a.minute == b.minute;
 
 /// Gesamtbefinden-Slider 0–100. Start bewusst ohne Wert („nicht angegeben“);
 /// erstes Verschieben setzt einen Wert, „Zurücksetzen“ entfernt ihn wieder.

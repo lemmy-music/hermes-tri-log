@@ -2,15 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/lemmy-music/hermes-tri-log/blob/main/docs/schema.json",
   "title": "Tri-Log Datenformat",
-  "description": "Import- und Exportformat der Tri-Log-App (schema_version 1.0). Pläne werden als JSON von einer anderen KI geliefert; Exporte enthalten zusätzlich Aktivitäten und Tagebucheinträge. Alle Dauern sind Sekunden, Datumswerte entweder reine Kalendertage (YYYY-MM-DD) oder ISO-8601-Zeitstempel mit Offset. null bedeutet 'nicht erfasst' und ist ausdrücklich nicht 0.",
+  "description": "Import- und Exportformat der Tri-Log-App (schema_version 1.1; 1.0 wird weiterhin importiert). Pläne werden als JSON von einer anderen KI geliefert; Exporte enthalten zusätzlich Aktivitäten und Tagebucheinträge. Alle Dauern sind Sekunden, Datumswerte entweder reine Kalendertage (YYYY-MM-DD) oder ISO-8601-Zeitstempel mit Offset. null bedeutet 'nicht erfasst' und ist ausdrücklich nicht 0.",
   "type": "object",
   "required": ["schema_version", "timezone", "plans"],
   "additionalProperties": true,
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0",
-      "description": "Version des Dokumentformats. Aktuell ausschließlich \"1.0\"."
+      "enum": ["1.0", "1.1"],
+      "description": "Version des Dokumentformats. Aktuell schreibt die App \"1.1\"; \"1.0\" (ohne updated_at/finalized_at) wird beim Import weiterhin akzeptiert."
     },
     "exported_at": {
       "type": ["string", "null"],
@@ -237,7 +237,17 @@
         "timestamp": {
           "type": "string",
           "format": "date-time",
-          "description": "Zeitpunkt des Eintrags als ISO-8601-Zeitstempel mit Offset."
+          "description": "Erstellt am: Zeitpunkt des Eintrags als ISO-8601-Zeitstempel mit Offset. Ändert sich nie, auch wenn der Eintrag später ergänzt wird."
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Zuletzt geändert am: ISO-8601-Zeitstempel mit Offset, wird bei jedem Speichern gesetzt. null nur bei Altbeständen aus schema_version 1.0 – dort gilt timestamp als letzte Änderung. Darf nicht vor timestamp liegen."
+        },
+        "finalized_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Abgeschlossen am: ISO-8601-Zeitstempel mit Offset; finalized_at null = Entwurf, gesetzt = Tagesnotiz abgeschlossen. Darf nicht vor timestamp liegen."
         },
         "overall_feeling": {
           "type": ["integer", "null"],

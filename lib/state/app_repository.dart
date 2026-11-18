@@ -291,8 +291,69 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     return entries.isEmpty ? null : entries.last.overallFeeling;
   }
 
+  /// Die eine Tagesnotiz eines Kalendertags: der neueste Eintrag (oder `null`).
+  ///
+  /// Mehrere Einträge pro Tag bleiben erlaubt (Altbestand/Import); die
+  /// Tagesnotiz arbeitet bewusst mit genau einem davon – dem neuesten.
+  JournalEntry? latestJournalEntryForDate(DateTime date) {
+    final entries = journalEntriesForDate(date);
+    return entries.isEmpty ? null : entries.last;
+  }
+
+  /// Tagesnotiz von heute (neuester Eintrag des heutigen Tages) oder `null`.
+  JournalEntry? get todayJournalEntry => latestJournalEntryForDate(_clock());
+
   /// Legt einen Tagebucheintrag an bzw. überschreibt ihn (Upsert per id).
-  void saveJournalEntry(JournalEntry entry) {
+  ///
+  /// `updated_at` wird bei JEDEM Speichern auf „jetzt“ gesetzt; `timestamp`
+  /// (erstellt) und `finalized_at` (Abschluss) bleiben unverändert. Ein
+  /// abgeschlossener Eintrag bleibt also abgeschlossen, auch wenn er später
+  /// noch ergänzt wird.
+  JournalEntry saveJournalEntry(JournalEntry entry) {
+    final now = isoWithOffset(_clock());
+    return _storeJournalEntry(
+      JournalEntry(
+        id: entry.id,
+        timestamp: entry.timestamp,
+        updatedAt: now,
+        finalizedAt: entry.finalizedAt,
+        overallFeeling: entry.overallFeeling,
+        text: entry.text,
+      ),
+    );
+  }
+
+  /// Schließt die Tagesnotiz ab: speichert den Stand und setzt `finalized_at`.
+  JournalEntry finalizeJournalEntry(JournalEntry entry) {
+    final now = isoWithOffset(_clock());
+    return _storeJournalEntry(
+      JournalEntry(
+        id: entry.id,
+        timestamp: entry.timestamp,
+        updatedAt: now,
+        finalizedAt: now,
+        overallFeeling: entry.overallFeeling,
+        text: entry.text,
+      ),
+    );
+  }
+
+  /// Öffnet eine abgeschlossene Tagesnotiz wieder (nur `finalized_at` → null).
+  JournalEntry reopenJournalEntry(JournalEntry entry) {
+    final now = isoWithOffset(_clock());
+    return _storeJournalEntry(
+      JournalEntry(
+        id: entry.id,
+        timestamp: entry.timestamp,
+        updatedAt: now,
+        finalizedAt: null,
+        overallFeeling: entry.overallFeeling,
+        text: entry.text,
+      ),
+    );
+  }
+
+  JournalEntry _storeJournalEntry(JournalEntry entry) {
     final journal = <JournalEntry>[..._state.journal];
     final index = journal.indexWhere((item) => item.id == entry.id);
     if (index >= 0) {
@@ -303,6 +364,7 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     _state = _state.copyWith(journal: journal);
     _scheduleSave();
     _notify();
+    return entry;
   }
 
   /// Löscht einen Tagebucheintrag.

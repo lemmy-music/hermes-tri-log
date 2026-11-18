@@ -275,16 +275,44 @@ class ExportService {
     return '$sign${formatMinutes(diffSeconds.abs())} min';
   }
 
+  /// Eine Tagebuchzeile mit Entwurfs-/Abschluss-Kennzeichnung.
+  ///
+  /// `… · Gesamtbefinden: 60 % · Entwurf` bzw.
+  /// `… · Gesamtbefinden: 60 % · abgeschlossen 21:14`
+  /// und – wenn sich die letzte Änderung von der Erstellung unterscheidet –
+  /// `(erstellt 07:12, zuletzt geändert 18:40)`.
   String _journalLine(JournalEntry entry) {
-    final time = DateTime.tryParse(entry.timestamp)?.toLocal();
+    final created = DateTime.tryParse(entry.timestamp)?.toLocal();
+    final changed = entry.lastChangedLocal;
+    final finalized = entry.finalizedLocal;
+
     final parts = <String>[
-      if (time != null) formatTime(time),
+      if (created != null) formatTime(created),
       'Gesamtbefinden: ${formatPercent(entry.overallFeeling)}',
+      finalized != null ? 'abgeschlossen ${formatTime(finalized)}' : 'Entwurf',
     ];
+
+    if (created != null &&
+        changed != null &&
+        changed.isAfter(created) &&
+        !_sameMinute(created, changed)) {
+      final changedLabel = _sameDay(created, changed)
+          ? 'zuletzt geändert ${formatTime(changed)}'
+          : 'zuletzt geändert ${formatDateNumeric(changed)}, '
+                '${formatTime(changed)}';
+      parts.add('(erstellt ${formatTime(created)}, $changedLabel)');
+    }
+
     final text = entry.text?.trim();
     if (text != null && text.isNotEmpty) parts.add(text);
     return parts.join(' · ');
   }
+
+  bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  bool _sameMinute(DateTime a, DateTime b) =>
+      _sameDay(a, b) && a.hour == b.hour && a.minute == b.minute;
 
   // ─── Zeitraum-Helfer ───────────────────────────────────────────────────────
 

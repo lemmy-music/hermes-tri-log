@@ -253,6 +253,23 @@ void main() {
     expect(feeling['minimum'], 0);
     expect(feeling['maximum'], 100);
     expect(jsonEncode(schema), isNot(contains('"metrics"')));
+
+    // Schema 1.1: getrennte Zeitpunkte für erstellt/geändert/abgeschlossen.
+    for (final key in <String>['timestamp', 'updated_at', 'finalized_at']) {
+      expect(properties.containsKey(key), isTrue, reason: key);
+    }
+    expect((properties['updated_at'] as Map<String, dynamic>)['type'], <String>[
+      'string',
+      'null',
+    ]);
+    expect(
+      (properties['finalized_at'] as Map<String, dynamic>)['type'],
+      <String>['string', 'null'],
+    );
+    final schemaVersion =
+        (schema['properties'] as Map<String, dynamic>)['schema_version']
+            as Map<String, dynamic>;
+    expect(schemaVersion['enum'], <String>['1.0', '1.1']);
   });
 
   test('unbekannte Felder werden gezählt und als Hinweis gemeldet', () {
@@ -334,5 +351,101 @@ void main() {
       jsonEncode(structure.toJson()),
       contains('"target_power_watts":250'),
     );
+  });
+
+  group('Tagesnotiz-Felder (updated_at/finalized_at)', () {
+    String documentWithJournal(
+      Map<String, dynamic> journalEntry, {
+      String schemaVersion = '1.1',
+    }) => jsonEncode(<String, dynamic>{
+      'schema_version': schemaVersion,
+      'timezone': 'Europe/Berlin',
+      'plans': <Map<String, dynamic>>[planJson()],
+      'journal': <Map<String, dynamic>>[journalEntry],
+    });
+
+    test('1.0-Datei ohne neue Felder bleibt gültig (Altbestand)', () {
+      final result = service.parse(
+        documentWithJournal(journalJson(), schemaVersion: '1.0'),
+        now: now,
+      );
+      expect(result.errors, isEmpty);
+      // 1.0 wird weiterhin akzeptiert – kein Hinweis zur Version.
+      expect(result.warnings.join(' '), isNot(contains('schema_version')));
+      final entry = result.journal.single;
+      expect(entry.updatedAt, isNull);
+      expect(entry.finalizedAt, isNull);
+      expect(entry.lastChangedAt, entry.timestamp);
+    });
+
+    test('1.1-Datei mit updated_at/finalized_at wird übernommen', () {
+      final result = service.parse(
+        documentWithJournal(<String, dynamic>{
+          ...journalJson(),
+          'updated_at': '2026-11-23T22:05:00+01:00',
+          'finalized_at': '2026-11-23T21:30:00+01:00',
+        }),
+        now: now,
+      );
+      expect(result.errors, isEmpty);
+      expect(result.warnings, isEmpty);
+      final entry = result.journal.single;
+      expect(entry.updatedAt, '2026-11-23T22:05:00+01:00');
+      expect(entry.finalizedAt, '2026-11-23T21:30:00+01:00');
+      expect(entry.isFinalized, isTrue);
+      expect(result.ignoredUnknownFields, 0);
+    });
+
+    test('finalized_at vor timestamp ist ein harter Fehler', () {
+      final result = service.parse(
+        documentWithJournal(<String, dynamic>{
+          ...journalJson(timestamp: '2026-11-23T21:30:00+01:00'),
+          'finalized_at': '2026-11-23T07:00:00+01:00',
+        }),
+        now: now,
+      );
+      expect(result.hasErrors, isTrue);
+      expect(result.errors.join(' '), contains('finalized_at'));
+      expect(result.errors.join(' '), contains('vor timestamp'));
+      expect(result.journal, isEmpty);
+    });
+
+    test('updated_at vor timestamp ist ein harter Fehler', () {
+      final result = service.parse(
+        documentWithJournal(<String, dynamic>{
+          ...journalJson(timestamp: '2026-11-23T21:30:00+01:00'),
+          'updated_at': '2026-11-23T06:00:00+01:00',
+        }),
+        now: now,
+      );
+      expect(result.hasErrors, isTrue);
+      expect(result.errors.join(' '), contains('updated_at'));
+      expect(result.errors.join(' '), contains('vor timestamp'));
+      expect(result.journal, isEmpty);
+    });
+
+    test('kaputter ISO-Zeitstempel in updated_at ist ein harter Fehler', () {
+      final result = service.parse(
+        documentWithJournal(<String, dynamic>{
+          ...journalJson(),
+          'updated_at': 'gestern abend',
+        }),
+        now: now,
+      );
+      expect(result.hasErrors, isTrue);
+      expect(result.errors.join(' '), contains('ist kein ISO-Zeitstempel'));
+      expect(result.journal, isEmpty);
+    });
+
+    test('unbekannte schema_version erzeugt weiterhin nur einen Hinweis', () {
+      final result = service.parse(
+        documentWithJournal(journalJson(), schemaVersion: '2.0'),
+        now: now,
+      );
+      expect(result.errors, isEmpty);
+      expect(result.warnings.join(' '), contains('schema_version "2.0"'));
+      expect(result.warnings.join(' '), contains('1.1'));
+      expect(result.journal, hasLength(1));
+    });
   });
 }

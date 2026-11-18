@@ -90,6 +90,8 @@ const Set<String> _activityKeys = <String>{
 const Set<String> _journalKeys = <String>{
   'id',
   'timestamp',
+  'updated_at',
+  'finalized_at',
   'overall_feeling',
   'text',
 };
@@ -125,10 +127,11 @@ class ImportService {
     if (schemaVersion != null) {
       if (schemaVersion is! String) {
         ctx.error('"schema_version" muss ein Text sein.');
-      } else if (schemaVersion != kSchemaVersion) {
+      } else if (!kAcceptedSchemaVersions.contains(schemaVersion)) {
         ctx.warn(
           'schema_version "$schemaVersion" ist unbekannt '
-          '(erwartet: "$kSchemaVersion").',
+          '(erwartet: "$kSchemaVersion", akzeptiert: '
+          '${kAcceptedSchemaVersions.join(', ')}).',
         );
       }
     }
@@ -672,6 +675,39 @@ class ImportService {
         ctx.warn('$where: timestamp liegt mehr als 2 Jahre entfernt.');
       }
 
+      // Sekundäre Zeitstempel: gleiche ISO-Prüfung wie timestamp, dürfen aber
+      // nicht vor der Erstellung liegen (Altbestand aus 1.0 hat beide nicht).
+      String? readSecondaryTimestamp(String key, String label) {
+        final rawValue = entry[key];
+        if (rawValue == null) return null;
+        if (rawValue is! String) {
+          ctx.error('$where: $key muss ein ISO-Zeitstempel sein.');
+          valid = false;
+          return null;
+        }
+        final parsed = DateTime.tryParse(rawValue);
+        if (parsed == null) {
+          ctx.error('$where: $key "$rawValue" ist kein ISO-Zeitstempel.');
+          valid = false;
+          return null;
+        }
+        if (timestamp != null && parsed.isBefore(timestamp)) {
+          ctx.error('$where: $key ($label) darf nicht vor timestamp liegen.');
+          valid = false;
+          return null;
+        }
+        return rawValue;
+      }
+
+      final updatedAt = readSecondaryTimestamp(
+        'updated_at',
+        'zuletzt geändert',
+      );
+      final finalizedAt = readSecondaryTimestamp(
+        'finalized_at',
+        'abgeschlossen',
+      );
+
       int? overallFeeling;
       final rawFeeling = entry['overall_feeling'];
       if (rawFeeling != null) {
@@ -708,6 +744,8 @@ class ImportService {
         JournalEntry(
           id: id!,
           timestamp: rawTimestamp,
+          updatedAt: updatedAt,
+          finalizedAt: finalizedAt,
           overallFeeling: overallFeeling,
           text: text,
         ),

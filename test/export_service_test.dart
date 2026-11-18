@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:tri_log/models/models.dart';
 import 'package:tri_log/services/export_service.dart';
+import 'package:tri_log/utils/formats.dart';
 
 import 'fixtures.dart';
 
@@ -18,7 +19,7 @@ void main() {
             jsonDecode(exporter.buildJson(sampleState(), now: now))
                 as Map<String, dynamic>;
 
-        expect(json['schema_version'], '1.0');
+        expect(json['schema_version'], '1.1');
         expect(json['timezone'], 'Europe/Berlin');
         expect(
           RegExp(
@@ -170,6 +171,73 @@ void main() {
         );
         expect(withoutFeeling, contains('Gesamtbefinden: –'));
         expect(withoutFeeling, contains('Müde'));
+      },
+    );
+
+    test(
+      'Tagebuchzeilen kennzeichnen Entwurf bzw. Abschluss samt Zeitstempeln',
+      () {
+        final draft = JournalEntry(
+          id: 'j-draft',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+          updatedAt: isoWithOffset(DateTime(2026, 11, 23, 18, 40)),
+          overallFeeling: 60,
+          text: 'Tagsüber gesammelt',
+        );
+        final done = JournalEntry(
+          id: 'j-done',
+          timestamp: isoWithOffset(DateTime(2026, 11, 24, 7, 0)),
+          updatedAt: isoWithOffset(DateTime(2026, 11, 24, 21, 14)),
+          finalizedAt: isoWithOffset(DateTime(2026, 11, 24, 21, 14)),
+          overallFeeling: 70,
+          text: 'Abendnotiz',
+        );
+
+        final markdown = exporter.buildMarkdown(
+          sampleState(journal: <JournalEntry>[draft, done]),
+          now: now,
+        );
+
+        expect(markdown, contains('07:12 · Gesamtbefinden: 60 % · Entwurf'));
+        expect(markdown, contains('(erstellt 07:12, zuletzt geändert 18:40)'));
+        expect(
+          markdown,
+          contains('07:00 · Gesamtbefinden: 70 % · abgeschlossen 21:14'),
+        );
+        expect(markdown, contains('Abendnotiz'));
+      },
+    );
+
+    test(
+      'JSON-Export enthält updated_at/finalized_at und schema_version 1.1',
+      () {
+        final state = sampleState(
+          journal: <JournalEntry>[
+            JournalEntry(
+              id: 'j-done',
+              timestamp: isoWithOffset(DateTime(2026, 11, 23, 7, 12)),
+              updatedAt: isoWithOffset(DateTime(2026, 11, 23, 21, 14)),
+              finalizedAt: isoWithOffset(DateTime(2026, 11, 23, 21, 14)),
+              overallFeeling: 70,
+              text: 'Abendnotiz',
+            ),
+          ],
+        );
+        final json =
+            jsonDecode(exporter.buildJson(state, now: now))
+                as Map<String, dynamic>;
+        expect(json['schema_version'], '1.1');
+        final entry =
+            (json['journal'] as List<dynamic>).single as Map<String, dynamic>;
+        expect(entry['timestamp'], isNotNull);
+        expect(entry['updated_at'], isNotNull);
+        expect(entry['finalized_at'], isNotNull);
+        expect(
+          DateTime.parse(
+            entry['finalized_at'] as String,
+          ).isAtSameMomentAs(DateTime.parse(entry['timestamp'] as String)),
+          isFalse,
+        );
       },
     );
 

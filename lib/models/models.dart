@@ -1,7 +1,13 @@
 import '../utils/formats.dart';
 
 /// Version des Dokumentformats (Import/Export/Storage).
-const String kSchemaVersion = '1.0';
+const String kSchemaVersion = '1.1';
+
+/// Versionen, die beim Import weiterhin akzeptiert werden.
+///
+/// `1.0` kennt weder `updated_at` noch `finalized_at` – solche Einträge gelten
+/// als Altbestand (fehlende Felder = `null`).
+const Set<String> kAcceptedSchemaVersions = <String>{'1.0', '1.1'};
 
 /// Feste Zeitzone des Datenmodells – alle Datumswerte sind lokale Kalendertage
 /// bzw. ISO-Zeitstempel mit Offset.
@@ -102,6 +108,13 @@ double? _readDouble(Object? value) => value is num ? value.toDouble() : null;
 bool? _readBool(Object? value) => value is bool ? value : null;
 
 String? _readString(Object? value) => value is String ? value : null;
+
+/// ISO-Zeitstempel: nur Strings, die sich parsen lassen (sonst `null`).
+String? _readIsoTimestamp(Object? value) {
+  final text = _readString(value);
+  if (text == null || DateTime.tryParse(text) == null) return null;
+  return text;
+}
 
 List<Object?> _readList(Object? value) => value is List ? value : const [];
 
@@ -423,24 +436,57 @@ class Activity {
 /// Tagebuch-Eintrag. [overallFeeling] ist bewusst ein einziger,
 /// undifferenzierter Wert 0..100 ("wie ich mich insgesamt fühle"); `null`
 /// bedeutet "nicht erfasst" und ist ausdrücklich NICHT 0.
+///
+/// Drei Zeitpunkte werden getrennt geführt:
+/// * [timestamp] – erstellt (ändert sich nie),
+/// * [updatedAt] – zuletzt geändert,
+/// * [finalizedAt] – Tagesnotiz abgeschlossen (`null` = Entwurf).
 class JournalEntry {
   const JournalEntry({
     required this.id,
     required this.timestamp,
+    this.updatedAt,
+    this.finalizedAt,
     this.overallFeeling,
     this.text,
   });
 
   final String id;
+
+  /// Erstellungszeitpunkt (ISO-8601 mit lokalem Offset).
   final String timestamp;
+
+  /// Zeitpunkt der letzten Änderung (ISO-8601 mit lokalem Offset).
+  ///
+  /// `null` nur bei Altbeständen aus Schema 1.0; dort gilt [timestamp] als
+  /// letzte Änderung (siehe [lastChangedAt]).
+  final String? updatedAt;
+
+  /// Abschluss der Tagesnotiz; `null` = Entwurf.
+  final String? finalizedAt;
 
   /// Gesamtbefinden 0..100 (0 = sehr schlecht, 100 = sehr gut).
   final int? overallFeeling;
   final String? text;
 
+  /// Tagesnotiz ist abgeschlossen (kein Entwurf mehr).
+  bool get isFinalized => finalizedAt != null;
+
+  /// Letzte Änderung – bei Altbeständen ohne `updated_at` der Zeitstempel.
+  String get lastChangedAt => updatedAt ?? timestamp;
+
+  /// Zeitpunkt der letzten Änderung als lokale Zeit (oder `null`).
+  DateTime? get lastChangedLocal => DateTime.tryParse(lastChangedAt)?.toLocal();
+
+  /// Abschlusszeitpunkt als lokale Zeit (oder `null` = Entwurf).
+  DateTime? get finalizedLocal =>
+      finalizedAt == null ? null : DateTime.tryParse(finalizedAt!)?.toLocal();
+
   factory JournalEntry.fromJson(Map<String, dynamic> json) => JournalEntry(
     id: _readString(json['id']) ?? '',
     timestamp: _readString(json['timestamp']) ?? '',
+    updatedAt: _readIsoTimestamp(json['updated_at']),
+    finalizedAt: _readIsoTimestamp(json['finalized_at']),
     overallFeeling: _readInt(json['overall_feeling']),
     text: _readString(json['text']),
   );
@@ -454,9 +500,12 @@ class JournalEntry {
     return JournalEntry.fromJson(raw);
   }
 
+  /// Beide Felder werden immer geschrieben (fehlend = `null`).
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'timestamp': timestamp,
+    'updated_at': updatedAt,
+    'finalized_at': finalizedAt,
     'overall_feeling': overallFeeling,
     'text': text,
   };
