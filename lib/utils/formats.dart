@@ -130,6 +130,31 @@ String? durationDeltaLabel(int? planSeconds, int? actualSeconds) {
   return diffSeconds < 0 ? '$amount min kürzer' : '$amount min länger';
 }
 
+/// `1 Eintrag`, `0 Einträge`, `2 Einträge` – Zahl samt richtigem Numerus.
+String pluralEintraege(int count) =>
+    count == 1 ? '1 Eintrag' : '$count Einträge';
+
+/// `1 Tag`, `2 Tage` (Nominativ/Akkusativ).
+String pluralTage(int count) => count == 1 ? '1 Tag' : '$count Tage';
+
+/// Dativform für „an …“: `1 Tag`, `2 Tagen`.
+String pluralTageDativ(int count) => count == 1 ? '1 Tag' : '$count Tagen';
+
+/// `1 Plan`, `2 Pläne`.
+String pluralPlaene(int count) => count == 1 ? '1 Plan' : '$count Pläne';
+
+/// `1 Plan-Revision`, `2 Plan-Revisionen`.
+String pluralPlanRevisionen(int count) =>
+    count == 1 ? '1 Plan-Revision' : '$count Plan-Revisionen';
+
+/// `1 Sitzung`, `2 Sitzungen`.
+String pluralSitzungen(int count) =>
+    count == 1 ? '1 Sitzung' : '$count Sitzungen';
+
+/// `1 Aktivität`, `2 Aktivitäten`.
+String pluralAktivitaeten(int count) =>
+    count == 1 ? '1 Aktivität' : '$count Aktivitäten';
+
 /// ISO-8601-Zeitstempel mit explizitem lokalem Offset (`2026-11-16T20:05:00+01:00`).
 String isoWithOffset(DateTime dateTime) {
   final local = dateTime.isUtc ? dateTime.toLocal() : dateTime;

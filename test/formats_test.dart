@@ -128,6 +128,41 @@ void main() {
     });
   });
 
+  group('Pluralformen', () {
+    test('pluralEintraege: 0/1/2/5', () {
+      expect(pluralEintraege(0), '0 Einträge');
+      expect(pluralEintraege(1), '1 Eintrag');
+      expect(pluralEintraege(2), '2 Einträge');
+      expect(pluralEintraege(5), '5 Einträge');
+    });
+
+    test('pluralTage: 0/1/2/5', () {
+      expect(pluralTage(0), '0 Tage');
+      expect(pluralTage(1), '1 Tag');
+      expect(pluralTage(2), '2 Tage');
+      expect(pluralTage(5), '5 Tage');
+    });
+
+    test('pluralTageDativ (für „an …“): 0/1/2/5', () {
+      expect(pluralTageDativ(0), '0 Tagen');
+      expect(pluralTageDativ(1), '1 Tag');
+      expect(pluralTageDativ(2), '2 Tagen');
+      expect(pluralTageDativ(5), '5 Tagen');
+    });
+
+    test('weitere Nomen: Pläne, Plan-Revisionen, Sitzungen, Aktivitäten', () {
+      expect(pluralPlaene(1), '1 Plan');
+      expect(pluralPlaene(2), '2 Pläne');
+      expect(pluralPlanRevisionen(0), '0 Plan-Revisionen');
+      expect(pluralPlanRevisionen(1), '1 Plan-Revision');
+      expect(pluralPlanRevisionen(5), '5 Plan-Revisionen');
+      expect(pluralSitzungen(1), '1 Sitzung');
+      expect(pluralSitzungen(2), '2 Sitzungen');
+      expect(pluralAktivitaeten(1), '1 Aktivität');
+      expect(pluralAktivitaeten(2), '2 Aktivitäten');
+    });
+  });
+
   group('Ids', () {
     test('Format <prefix>-<millis>-<4 Zeichen>', () {
       final generator = IdGenerator(

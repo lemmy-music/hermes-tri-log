@@ -58,7 +58,8 @@ class JournalScreen extends StatelessWidget {
                 Text('Tagebuch', style: theme.textTheme.headlineSmall),
                 if (!isEmpty)
                   Text(
-                    '$entryCount Eintrag/Einträge an ${groups.length} Tag(en)',
+                    '${pluralEintraege(entryCount)} an '
+                    '${pluralTageDativ(groups.length)}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -153,12 +154,17 @@ class _DailyNoteCard extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
-                  Icon(
-                    finalized ? Icons.task_alt : Icons.edit_note,
-                    size: 20,
-                    color: finalized ? muted : scheme.onPrimaryContainer,
-                  ),
-                  const SizedBox(width: 8),
+                  // Bei „abgeschlossen“ steht das Häkchen ausschließlich in der
+                  // Statuszeile („abgeschlossen um HH:MM“) – kein zweites Icon
+                  // im Titel, das wirkt doppelt.
+                  if (!finalized) ...<Widget>[
+                    Icon(
+                      Icons.edit_note,
+                      size: 20,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Expanded(
                     child: Text(
                       'Tagesnotiz',

@@ -370,4 +370,75 @@ void main() {
     expect(find.textContaining('zuletzt geändert 09:45'), findsOneWidget);
     expect(find.textContaining('abgeschlossen um'), findsNothing);
   });
+
+  testWidgets('Kopfzeile pluralisiert Einträge und Tage korrekt', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      journal: <JournalEntry>[
+        const JournalEntry(
+          id: 'jnl-a',
+          timestamp: '2026-11-23T09:45:00+01:00',
+          text: 'Heute',
+        ),
+        const JournalEntry(
+          id: 'jnl-b',
+          timestamp: '2026-11-22T18:10:00+01:00',
+          text: 'Gestern',
+        ),
+      ],
+    );
+    await openJournalTab(tester);
+
+    expect(find.text('2 Einträge an 2 Tagen'), findsOneWidget);
+    expect(find.textContaining('Eintrag/Einträge'), findsNothing);
+    expect(find.textContaining('Tag(en)'), findsNothing);
+  });
+
+  testWidgets('Kopfzeile im Singular: „1 Eintrag an 1 Tag“', (tester) async {
+    await pumpApp(
+      tester,
+      journal: <JournalEntry>[
+        const JournalEntry(
+          id: 'jnl-a',
+          timestamp: '2026-11-23T09:45:00+01:00',
+          text: 'Nur heute',
+        ),
+      ],
+    );
+    await openJournalTab(tester);
+
+    expect(find.text('1 Eintrag an 1 Tag'), findsOneWidget);
+  });
+
+  testWidgets('Abgeschlossene Tagesnotiz zeigt genau EIN Häkchen', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      journal: <JournalEntry>[
+        JournalEntry(
+          id: 'jnl-a',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 9, 45)),
+          finalizedAt: isoWithOffset(DateTime(2026, 11, 23, 21, 30)),
+          text: 'Tag geschafft.',
+        ),
+      ],
+    );
+    await openJournalTab(tester);
+
+    final card = find.byKey(const Key('dailyNoteCard'));
+    expect(card, findsOneWidget);
+    // Häkchen ausschließlich in der Statuszeile, nicht zusätzlich im Titel.
+    expect(
+      find.descendant(of: card, matching: find.byIcon(Icons.check_circle)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: card, matching: find.byIcon(Icons.task_alt)),
+      findsNothing,
+    );
+    expect(find.textContaining('abgeschlossen um 21:30'), findsOneWidget);
+  });
 }

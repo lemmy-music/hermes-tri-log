@@ -1,5 +1,6 @@
 import '../models/models.dart';
 import '../utils/canonical_json.dart';
+import '../utils/formats.dart';
 import 'import_service.dart';
 
 /// Status eines importierten Plans gegenüber dem lokalen Bestand.
@@ -102,8 +103,8 @@ class MergeResult {
     final sessionText = parts.isEmpty
         ? 'keine Sitzungsänderung'
         : parts.join(', ');
-    return 'Import übernommen: ${plans.length} Plan(e), $sessionText, '
-        '$affectedDayCount Tag(e) betroffen.';
+    return 'Import übernommen: ${pluralPlanRevisionen(plans.length)}, '
+        '$sessionText, ${pluralTage(affectedDayCount)} betroffen.';
   }
 
   /// Alle Warnungen (Plan-spezifisch + global) ohne Duplikate.

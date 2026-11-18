@@ -227,7 +227,8 @@ void main() {
     );
     expect(merge.affectedDayCount, 2);
     expect(merge.summaryDe, contains('3 hinzugefügt'));
-    expect(merge.summaryDe, contains('2 Tag(e) betroffen'));
+    expect(merge.summaryDe, contains('2 Tage betroffen'));
+    expect(merge.summaryDe, contains('2 Plan-Revisionen'));
   });
 
   test('ältere Revision einer bekannten plan.id erzeugt einen Hinweis', () {

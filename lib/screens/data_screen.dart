@@ -8,6 +8,7 @@ import '../services/download_helper.dart';
 import '../services/import_service.dart';
 import '../services/merge_service.dart';
 import '../state/app_repository.dart';
+import '../utils/formats.dart';
 
 /// Daten-Tab: Import (mit Vorschau), JSON-/Markdown-Export, alles löschen.
 class DataScreen extends StatefulWidget {
@@ -38,9 +39,10 @@ class _DataScreenState extends State<DataScreen> {
         Text('Daten', style: theme.textTheme.headlineSmall),
         const SizedBox(height: 4),
         Text(
-          '${state.plans.length} Plan-Revision(en) · $sessionCount Sitzung(en) · '
-          '${state.activities.length} Aktivität(en) · '
-          '${state.journal.length} Tagebucheintrag/-einträge',
+          '${pluralPlanRevisionen(state.plans.length)} · '
+          '${pluralSitzungen(sessionCount)} · '
+          '${pluralAktivitaeten(state.activities.length)} · '
+          '${pluralEintraege(state.journal.length)}',
           style: theme.textTheme.bodySmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -440,7 +442,7 @@ class _PlanDiffRow extends StatelessWidget {
           ),
           Text(
             '${diff.planId} · ${counters.join(' / ')} Sitzungen · '
-            '${diff.affectedDates.length} Tag(e)',
+            '${pluralTage(diff.affectedDates.length)}',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
