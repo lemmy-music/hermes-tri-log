@@ -278,7 +278,9 @@ class ExportService {
   /// Eine Tagebuchzeile mit Entwurfs-/Abschluss-Kennzeichnung.
   ///
   /// `… · Gesamtbefinden: 60 % · Entwurf` bzw.
-  /// `… · Gesamtbefinden: 60 % · abgeschlossen 21:14`
+  /// `… · Gesamtbefinden: 60 % · abgeschlossen 21:14` (manuell) bzw.
+  /// `… · Gesamtbefinden: 60 % · abgeschlossen 23:59 (automatisch)` (von der
+  /// App gesetzt, weil der Entwurf offen blieb)
   /// und – wenn sich die letzte Änderung von der Erstellung unterscheidet –
   /// `(erstellt 07:12, zuletzt geändert 18:40)`.
   String _journalLine(JournalEntry entry) {
@@ -289,7 +291,11 @@ class ExportService {
     final parts = <String>[
       if (created != null) formatTime(created),
       'Gesamtbefinden: ${formatPercent(entry.overallFeeling)}',
-      finalized != null ? 'abgeschlossen ${formatTime(finalized)}' : 'Entwurf',
+      if (finalized == null)
+        'Entwurf'
+      else
+        'abgeschlossen ${formatTime(finalized)}'
+            '${entry.finalizedAutomatically ? ' (automatisch)' : ''}',
     ];
 
     if (created != null &&

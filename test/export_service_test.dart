@@ -287,4 +287,57 @@ void main() {
       expect(markdown, contains('**Geplant**'));
     });
   });
+
+  group('Tagebuch-Status (automatisch/manuell/Entwurf)', () {
+    // Lokale Zeitstempel (isoWithOffset), damit die Anzeige unabhängig von der
+    // Systemzeitzone 20:00/23:59/21:14 zeigt.
+    final state = sampleState(
+      journal: <JournalEntry>[
+        JournalEntry(
+          id: 'j-auto',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 20, 0)),
+          finalizedAt: isoWithOffset(DateTime(2026, 11, 23, 23, 59)),
+          finalizedAutomatically: true,
+          overallFeeling: 70,
+        ),
+        JournalEntry(
+          id: 'j-manuell',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 21, 0)),
+          finalizedAt: isoWithOffset(DateTime(2026, 11, 23, 21, 14)),
+          overallFeeling: 60,
+        ),
+        JournalEntry(
+          id: 'j-entwurf',
+          timestamp: isoWithOffset(DateTime(2026, 11, 23, 22, 0)),
+          overallFeeling: 50,
+        ),
+      ],
+    );
+
+    test('Markdown markiert automatische Abschlüsse mit „(automatisch)“', () {
+      final markdown = exporter.buildMarkdown(state, now: now);
+
+      expect(markdown, contains('· abgeschlossen 23:59 (automatisch)'));
+      // Manueller Abschluss bleibt ohne Zusatz.
+      expect(markdown, contains('· abgeschlossen 21:14'));
+      expect(markdown, isNot(contains('abgeschlossen 21:14 (automatisch)')));
+      // Entwurf bleibt Entwurf.
+      expect(markdown, contains('· Entwurf'));
+    });
+
+    test('JSON-Export schreibt finalized_automatically immer mit', () {
+      final json =
+          jsonDecode(exporter.buildJson(state, now: now))
+              as Map<String, dynamic>;
+      final journal = (json['journal'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      final byId = <String, Map<String, dynamic>>{
+        for (final entry in journal) entry['id'] as String: entry,
+      };
+      expect(byId['j-auto']!['finalized_automatically'], isTrue);
+      expect(byId['j-manuell']!['finalized_automatically'], isFalse);
+      expect(byId['j-entwurf']!['finalized_automatically'], isFalse);
+      expect(byId['j-entwurf']!['finalized_at'], isNull);
+    });
+  });
 }

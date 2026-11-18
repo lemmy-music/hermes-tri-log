@@ -249,6 +249,11 @@
           "format": "date-time",
           "description": "Abgeschlossen am: ISO-8601-Zeitstempel mit Offset; finalized_at null = Entwurf, gesetzt = Tagesnotiz abgeschlossen. Darf nicht vor timestamp liegen."
         },
+        "finalized_automatically": {
+          "type": "boolean",
+          "default": false,
+          "description": "true, wenn die App den Abschluss automatisch um 23:59 des Folgetags gesetzt hat, weil der Entwurf offen blieb; false bei manuellem Abschluss"
+        },
         "overall_feeling": {
           "type": ["integer", "null"],
           "minimum": 0,

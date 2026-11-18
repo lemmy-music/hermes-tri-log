@@ -1,7 +1,11 @@
+import 'dart:convert';
+
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_log/models/models.dart';
 import 'package:tri_log/services/history_service.dart';
+import 'package:tri_log/services/storage.dart';
 import 'package:tri_log/state/app_repository.dart';
 import 'package:tri_log/utils/formats.dart';
 
@@ -418,6 +422,235 @@ void main() {
           hasLength(2),
         );
         expect(repository.todayJournalEntry?.text, 'weiter geschrieben');
+
+        repository.dispose();
+      },
+    );
+  });
+
+  group('automatischer Abschluss vergangener Entwürfe', () {
+    final yesterday = DateTime(2026, 11, 22, 20, 10);
+
+    /// Eintrag von gestern als Entwurf (nach dem Laden gespeichert, damit er
+    /// nicht schon beim Laden abgeschlossen wird).
+    JournalEntry saveYesterdayDraft(
+      AppRepository repository, {
+      String id = 'j1',
+    }) => repository.saveJournalEntry(
+      entry(id: id, at: yesterday, feeling: 60, text: 'offen geblieben'),
+    );
+
+    test(
+      'schließt gestern um 23:59 ab, zählt, lässt updated_at stehen',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+        final created = saveYesterdayDraft(repository);
+
+        var notifications = 0;
+        repository.addListener(() => notifications++);
+
+        final count = repository.finalizeStaleJournalDrafts();
+
+        expect(count, 1);
+        expect(notifications, 1);
+        final finalized = repository.journalEntryById('j1')!;
+        expect(finalized.isFinalized, isTrue);
+        expect(finalized.finalizedAutomatically, isTrue);
+        expect(
+          finalized.finalizedLocal!.isAtSameMomentAs(
+            DateTime(2026, 11, 22, 23, 59),
+          ),
+          isTrue,
+        );
+        // Änderungszeitpunkt bleibt der letzte Speichervorgang.
+        expect(finalized.updatedAt, created.updatedAt);
+        expect(
+          DateTime.parse(finalized.updatedAt!).isAtSameMomentAs(today),
+          isTrue,
+        );
+        expect(finalized.text, 'offen geblieben');
+
+        repository.dispose();
+      },
+    );
+
+    test(
+      'zweiter Aufruf ändert nichts (idempotent, keine Benachrichtigung)',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+        saveYesterdayDraft(repository);
+        expect(repository.finalizeStaleJournalDrafts(), 1);
+        final before = repository.journalEntryById('j1')!;
+
+        var notifications = 0;
+        repository.addListener(() => notifications++);
+        expect(repository.finalizeStaleJournalDrafts(), 0);
+        expect(notifications, 0);
+        expect(
+          repository.journalEntryById('j1')!.finalizedAt,
+          before.finalizedAt,
+        );
+
+        repository.dispose();
+      },
+    );
+
+    test('heutiger Entwurf wird nicht abgeschlossen', () async {
+      final repository = buildRepository();
+      await repository.load();
+      repository.saveJournalEntry(
+        entry(id: 'heute', at: DateTime(2026, 11, 23, 7, 12), feeling: 60),
+      );
+
+      expect(repository.finalizeStaleJournalDrafts(), 0);
+      expect(repository.journalEntryById('heute')!.isFinalized, isFalse);
+
+      repository.dispose();
+    });
+
+    test(
+      'Persistenz-Roundtrip: Flag und 23:59 überleben das Neuladen',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+        saveYesterdayDraft(repository);
+        expect(repository.finalizeStaleJournalDrafts(), 1);
+        await repository.flush();
+        repository.dispose();
+
+        final reloaded = newRepository();
+        await reloaded.load();
+        final restored = reloaded.journalEntryById('j1')!;
+        expect(restored.finalizedAutomatically, isTrue);
+        expect(
+          restored.finalizedLocal!.isAtSameMomentAs(
+            DateTime(2026, 11, 22, 23, 59),
+          ),
+          isTrue,
+        );
+        // Bereits abgeschlossen → beim Laden nichts mehr zu tun.
+        expect(reloaded.finalizeStaleJournalDrafts(), 0);
+        reloaded.dispose();
+      },
+    );
+
+    test('load() schließt vergangene Entwürfe beim App-Start ab', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        StorageService.storageKey: jsonEncode(<String, dynamic>{
+          'schema_version': '1.1',
+          'timezone': 'Europe/Berlin',
+          'plans': <dynamic>[],
+          'journal': <dynamic>[
+            <String, dynamic>{
+              'id': 'j-gestern',
+              'timestamp': isoWithOffset(yesterday),
+              'updated_at': isoWithOffset(DateTime(2026, 11, 22, 21, 0)),
+              'finalized_at': null,
+              'finalized_automatically': false,
+              'overall_feeling': 60,
+              'text': 'gestern offen',
+            },
+            <String, dynamic>{
+              'id': 'j-heute',
+              'timestamp': isoWithOffset(DateTime(2026, 11, 23, 8, 0)),
+              'updated_at': null,
+              'finalized_at': null,
+              'overall_feeling': 70,
+              'text': 'heute',
+            },
+          ],
+        }),
+      });
+
+      final repository = newRepository();
+      await repository.load();
+
+      final gestern = repository.journalEntryById('j-gestern')!;
+      expect(gestern.isFinalized, isTrue);
+      expect(gestern.finalizedAutomatically, isTrue);
+      expect(gestern.finalizedLocal!.hour, 23);
+      expect(gestern.finalizedLocal!.minute, 59);
+      expect(
+        gestern.finalizedLocal!.isAtSameMomentAs(
+          DateTime(2026, 11, 22, 23, 59),
+        ),
+        isTrue,
+      );
+      // Heute bleibt Entwurf.
+      expect(repository.journalEntryById('j-heute')!.isFinalized, isFalse);
+
+      repository.dispose();
+    });
+
+    test('App-Resume schließt über Mitternacht offene Entwürfe ab', () async {
+      final clocked = <DateTime>[DateTime(2026, 11, 23, 23, 55)];
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final repository = AppRepository(
+        clock: () => clocked.single,
+        saveDebounce: const Duration(milliseconds: 1),
+      );
+      await repository.load();
+      repository.saveJournalEntry(
+        entry(id: 'j1', at: DateTime(2026, 11, 23, 21, 0), feeling: 60),
+      );
+      expect(repository.journalEntryById('j1')!.isFinalized, isFalse);
+
+      // Über Mitternacht: die App kommt aus dem Hintergrund zurück.
+      clocked[0] = DateTime(2026, 11, 24, 0, 2);
+      repository.didChangeAppLifecycleState(AppLifecycleState.resumed);
+
+      final finalized = repository.journalEntryById('j1')!;
+      expect(finalized.finalizedAutomatically, isTrue);
+      expect(
+        finalized.finalizedLocal!.isAtSameMomentAs(
+          DateTime(2026, 11, 23, 23, 59),
+        ),
+        isTrue,
+      );
+
+      repository.dispose();
+    });
+
+    test(
+      'manueller Abschluss setzt das Flag false, Wiederöffnen ebenso',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+        final created = repository.saveJournalEntry(
+          entry(id: 'j1', at: today, feeling: 60, text: 'manuell'),
+        );
+
+        final manual = repository.finalizeJournalEntry(created);
+        expect(manual.isFinalized, isTrue);
+        expect(manual.finalizedAutomatically, isFalse);
+
+        final reopened = repository.reopenJournalEntry(manual);
+        expect(reopened.isFinalized, isFalse);
+        expect(reopened.finalizedAutomatically, isFalse);
+
+        repository.dispose();
+      },
+    );
+
+    test(
+      'Wiederöffnen eines automatisch abgeschlossenen Eintrags löscht das Flag',
+      () async {
+        final repository = buildRepository();
+        await repository.load();
+        saveYesterdayDraft(repository);
+        expect(repository.finalizeStaleJournalDrafts(), 1);
+        final auto = repository.journalEntryById('j1')!;
+        expect(auto.finalizedAutomatically, isTrue);
+
+        final reopened = repository.reopenJournalEntry(auto);
+        expect(reopened.finalizedAt, isNull);
+        expect(reopened.finalizedAutomatically, isFalse);
+        expect(
+          repository.journalEntryById('j1')!.isAutomaticallyFinalized,
+          isFalse,
+        );
 
         repository.dispose();
       },

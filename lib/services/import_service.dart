@@ -92,6 +92,7 @@ const Set<String> _journalKeys = <String>{
   'timestamp',
   'updated_at',
   'finalized_at',
+  'finalized_automatically',
   'overall_feeling',
   'text',
 };
@@ -708,6 +709,19 @@ class ImportService {
         'abgeschlossen',
       );
 
+      var finalizedAutomatically = false;
+      final rawAutomatically = entry['finalized_automatically'];
+      if (rawAutomatically != null) {
+        if (rawAutomatically is! bool) {
+          ctx.error(
+            '$where: finalized_automatically muss true oder false sein.',
+          );
+          valid = false;
+        } else {
+          finalizedAutomatically = rawAutomatically;
+        }
+      }
+
       int? overallFeeling;
       final rawFeeling = entry['overall_feeling'];
       if (rawFeeling != null) {
@@ -746,6 +760,7 @@ class ImportService {
           timestamp: rawTimestamp,
           updatedAt: updatedAt,
           finalizedAt: finalizedAt,
+          finalizedAutomatically: finalizedAutomatically,
           overallFeeling: overallFeeling,
           text: text,
         ),

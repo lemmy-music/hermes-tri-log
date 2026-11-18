@@ -35,6 +35,7 @@ Wenn du einen **Export der App** auswertest (nicht eine Plan-Datei): `activities
 - `timestamp` = **erstellt**, `updated_at` = **zuletzt geändert**, `finalized_at` = **abgeschlossen**.
 - `finalized_at: null` bedeutet **Entwurf**: Der Athlet hat tagsüber gesammelt, aber den Tag noch nicht abgeschlossen. Solche Einträge **nicht als Tagesurteil** werten (weder positiv noch negativ) — sie sind unvollständig.
 - `finalized_at` gesetzt (z. B. `21:14`) = **Tagesnotiz abgeschlossen**; das ist die belastbare Tagesbilanz.
+- `finalized_automatically: true` heißt: Der Entwurf blieb offen und die App hat ihn nachträglich um `23:59` des jeweiligen Tages abgeschlossen. Solche Notizen wurden vom Athleten **nicht bestätigt** — nicht wie eine bewusst abgeschlossene Tagesnotiz behandeln.
 - Im Markdown-Export steht das ausgeschrieben: `Gesamtbefinden: 60 % · Entwurf` bzw. `· abgeschlossen 21:14`, bei Änderungen zusätzlich `(erstellt 07:12, zuletzt geändert 18:40)`.
 - Fehlt `updated_at` (Altbestand aus Format `1.0`), gilt `timestamp` als letzte Änderung.
 

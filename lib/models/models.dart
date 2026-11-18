@@ -447,6 +447,7 @@ class JournalEntry {
     required this.timestamp,
     this.updatedAt,
     this.finalizedAt,
+    this.finalizedAutomatically = false,
     this.overallFeeling,
     this.text,
   });
@@ -465,12 +466,22 @@ class JournalEntry {
   /// Abschluss der Tagesnotiz; `null` = Entwurf.
   final String? finalizedAt;
 
+  /// `true`, wenn die App den Abschluss gesetzt hat (Entwurf blieb offen und
+  /// wurde rückwirkend um 23:59 des Eintragstags abgeschlossen).
+  ///
+  /// Manuelles Abschließen setzt das Feld auf `false`; Altbestände ohne Feld
+  /// lesen `false`.
+  final bool finalizedAutomatically;
+
   /// Gesamtbefinden 0..100 (0 = sehr schlecht, 100 = sehr gut).
   final int? overallFeeling;
   final String? text;
 
   /// Tagesnotiz ist abgeschlossen (kein Entwurf mehr).
   bool get isFinalized => finalizedAt != null;
+
+  /// Abgeschlossen, aber nicht vom Athleten bestätigt (automatisch um 23:59).
+  bool get isAutomaticallyFinalized => isFinalized && finalizedAutomatically;
 
   /// Letzte Änderung – bei Altbeständen ohne `updated_at` der Zeitstempel.
   String get lastChangedAt => updatedAt ?? timestamp;
@@ -487,6 +498,7 @@ class JournalEntry {
     timestamp: _readString(json['timestamp']) ?? '',
     updatedAt: _readIsoTimestamp(json['updated_at']),
     finalizedAt: _readIsoTimestamp(json['finalized_at']),
+    finalizedAutomatically: _readBool(json['finalized_automatically']) ?? false,
     overallFeeling: _readInt(json['overall_feeling']),
     text: _readString(json['text']),
   );
@@ -500,12 +512,14 @@ class JournalEntry {
     return JournalEntry.fromJson(raw);
   }
 
-  /// Beide Felder werden immer geschrieben (fehlend = `null`).
+  /// Alle Felder werden immer geschrieben (fehlend = `null`,
+  /// `finalized_automatically` immer als bool).
   Map<String, dynamic> toJson() => <String, dynamic>{
     'id': id,
     'timestamp': timestamp,
     'updated_at': updatedAt,
     'finalized_at': finalizedAt,
+    'finalized_automatically': finalizedAutomatically,
     'overall_feeling': overallFeeling,
     'text': text,
   };

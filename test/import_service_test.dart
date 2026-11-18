@@ -447,5 +447,82 @@ void main() {
       expect(result.warnings.join(' '), contains('1.1'));
       expect(result.journal, hasLength(1));
     });
+
+    group('finalized_automatically', () {
+      test('true wird gelesen und beim Export wieder geschrieben', () {
+        final result = service.parse(
+          documentWithJournal(<String, dynamic>{
+            ...journalJson(),
+            'finalized_at': '2026-11-23T23:59:00+01:00',
+            'finalized_automatically': true,
+          }),
+          now: now,
+        );
+        expect(result.errors, isEmpty);
+        // Bekanntes Feld: kein Hinweis auf ein unbekanntes Feld.
+        expect(result.ignoredUnknownFields, 0);
+        final entry = result.journal.single;
+        expect(entry.finalizedAutomatically, isTrue);
+        expect(entry.isAutomaticallyFinalized, isTrue);
+        expect(entry.toJson()['finalized_automatically'], isTrue);
+      });
+
+      test('false wird gelesen; fehlendes Feld ergibt false', () {
+        final explicitFalse = service.parse(
+          documentWithJournal(<String, dynamic>{
+            ...journalJson(),
+            'finalized_automatically': false,
+          }),
+          now: now,
+        );
+        expect(explicitFalse.journal.single.finalizedAutomatically, isFalse);
+        expect(
+          explicitFalse.journal.single.toJson()['finalized_automatically'],
+          isFalse,
+        );
+
+        // Altbestand ohne Feld → false, und der Export schreibt es explizit.
+        final missing = service.parse(
+          documentWithJournal(journalJson()),
+          now: now,
+        );
+        expect(missing.errors, isEmpty);
+        expect(missing.journal.single.finalizedAutomatically, isFalse);
+        expect(
+          missing.journal.single.toJson()['finalized_automatically'],
+          isFalse,
+        );
+      });
+
+      test('falscher Typ ist ein harter Fehler', () {
+        final result = service.parse(
+          documentWithJournal(<String, dynamic>{
+            ...journalJson(),
+            'finalized_automatically': 'ja',
+          }),
+          now: now,
+        );
+        expect(result.hasErrors, isTrue);
+        expect(result.errors.join(' '), contains('finalized_automatically'));
+        expect(result.errors.join(' '), contains('true oder false'));
+        expect(result.journal, isEmpty);
+      });
+    });
+  });
+
+  test('docs/schema.json dokumentiert finalized_automatically', () {
+    final schema =
+        jsonDecode(File('docs/schema.json').readAsStringSync())
+            as Map<String, dynamic>;
+    final defs = schema[r'$defs'] as Map<String, dynamic>;
+    final journalEntry = defs['journalEntry'] as Map<String, dynamic>;
+    final properties = journalEntry['properties'] as Map<String, dynamic>;
+
+    final field = properties['finalized_automatically'];
+    expect(field, isNotNull);
+    final map = field as Map<String, dynamic>;
+    expect(map['type'], 'boolean');
+    expect(map['default'], isFalse);
+    expect(map['description'], contains('23:59'));
   });
 }

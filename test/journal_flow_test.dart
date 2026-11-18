@@ -1,8 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_log/main.dart';
 import 'package:tri_log/models/models.dart';
+import 'package:tri_log/services/storage.dart';
 import 'package:tri_log/state/app_repository.dart';
 import 'package:tri_log/utils/formats.dart';
 
@@ -441,4 +444,120 @@ void main() {
     );
     expect(find.textContaining('abgeschlossen um 21:30'), findsOneWidget);
   });
+
+  testWidgets(
+    'vergangener Entwurf wird beim App-Start automatisch abgeschlossen',
+    (tester) async {
+      final gestern = DateTime(2026, 11, 22, 20, 10);
+      final vorgestern = DateTime(2026, 11, 21, 19, 0);
+
+      // Persistierter Zustand: ein offener Entwurf von gestern und ein manuell
+      // abgeschlossener Eintrag von vorgestern.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        StorageService.storageKey: jsonEncode(<String, dynamic>{
+          'schema_version': '1.1',
+          'timezone': 'Europe/Berlin',
+          'plans': <dynamic>[],
+          'journal': <dynamic>[
+            <String, dynamic>{
+              'id': 'j-gestern',
+              'timestamp': isoWithOffset(gestern),
+              'updated_at': isoWithOffset(DateTime(2026, 11, 22, 21, 0)),
+              'finalized_at': null,
+              'finalized_automatically': false,
+              'overall_feeling': 60,
+              'text': 'Gestern offen geblieben',
+            },
+            <String, dynamic>{
+              'id': 'j-vorgestern',
+              'timestamp': isoWithOffset(vorgestern),
+              'updated_at': isoWithOffset(DateTime(2026, 11, 21, 21, 14)),
+              'finalized_at': isoWithOffset(DateTime(2026, 11, 21, 21, 14)),
+              'finalized_automatically': false,
+              'overall_feeling': 75,
+              'text': 'Vorgestern bewusst abgeschlossen',
+            },
+          ],
+        }),
+      });
+
+      final repository = AppRepository(
+        clock: () => today,
+        saveDebounce: const Duration(milliseconds: 1),
+      );
+      // App-Start: load() schließt vergangene Entwürfe still ab.
+      await repository.load();
+      await repository.flush();
+
+      await tester.pumpWidget(TriLogApp(repository: repository));
+      await tester.pumpAndSettle();
+      await openJournalTab(tester);
+
+      final auto = repository.journalEntryById('j-gestern')!;
+      expect(auto.isAutomaticallyFinalized, isTrue);
+      expect(
+        auto.finalizedLocal!.isAtSameMomentAs(DateTime(2026, 11, 22, 23, 59)),
+        isTrue,
+      );
+
+      // Liste: Häkchen + Hinweis „automatisch abgeschlossen“.
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-j-gestern')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-final-j-gestern')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-auto-j-gestern')),
+        findsOneWidget,
+      );
+      expect(find.text('automatisch abgeschlossen'), findsOneWidget);
+
+      // Manuell abgeschlossener Eintrag bleibt ohne Automatik-Hinweis.
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-final-j-vorgestern')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-auto-j-vorgestern')),
+        findsNothing,
+      );
+
+      // Sheet: dezenter Hinweis im Kopf + „Wieder öffnen“.
+      await tester.tap(
+        find.byKey(const ValueKey<String>('journal-entry-j-gestern')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('journalAutoFinalizedHint')), findsOneWidget);
+      expect(find.text('automatisch abgeschlossen um 23:59'), findsOneWidget);
+      expect(find.byKey(const Key('journalReopenButton')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('journalReopenButton')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Wieder geöffnet'), findsOneWidget);
+      expect(find.byKey(const Key('journalAutoFinalizedHint')), findsNothing);
+
+      final reopened = repository.journalEntryById('j-gestern')!;
+      expect(reopened.isFinalized, isFalse);
+      expect(reopened.finalizedAutomatically, isFalse);
+      expect(reopened.text, 'Gestern offen geblieben');
+
+      await tester.tap(find.byKey(const Key('journalDoneButton')));
+      await tester.pumpAndSettle();
+
+      // Zurück in der Liste ist der Eintrag wieder ein Entwurf (kein Häkchen,
+      // kein Automatik-Hinweis).
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-final-j-gestern')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('journal-entry-auto-j-gestern')),
+        findsNothing,
+      );
+      expect(find.text('automatisch abgeschlossen'), findsNothing);
+    },
+  );
 }

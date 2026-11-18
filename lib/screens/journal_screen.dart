@@ -369,8 +369,12 @@ class _EntryTile extends StatelessWidget {
     final muted = theme.colorScheme.onSurfaceVariant;
     final local = DateTime.tryParse(entry.timestamp)?.toLocal();
     final changed = entry.lastChangedLocal;
+    final autoFinalized = entry.isAutomaticallyFinalized;
     final showChanged =
-        local != null && changed != null && changed.isAfter(local);
+        !autoFinalized &&
+        local != null &&
+        changed != null &&
+        changed.isAfter(local);
     final text = entry.text?.trim();
     final feeling = entry.overallFeeling;
 
@@ -412,10 +416,29 @@ class _EntryTile extends StatelessWidget {
                         ),
                       ),
                     ],
+                    // Automatisch abgeschlossene Einträge sind sichtbar
+                    // gekennzeichnet – der Athlet hat sie nicht bestätigt.
+                    if (autoFinalized) ...<Widget>[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'automatisch abgeschlossen',
+                          key: ValueKey<String>(
+                            'journal-entry-auto-${entry.id}',
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: muted,
+                          ),
+                        ),
+                      ),
+                    ],
                     const Spacer(),
                     if (entry.isFinalized) ...<Widget>[
                       Tooltip(
-                        message: 'Tagesnotiz abgeschlossen',
+                        message: autoFinalized
+                            ? 'automatisch abgeschlossen'
+                            : 'Tagesnotiz abgeschlossen',
                         child: Icon(
                           Icons.check_circle,
                           key: ValueKey<String>(

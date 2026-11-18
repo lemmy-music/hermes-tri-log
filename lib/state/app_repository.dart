@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../services/export_service.dart';
 import '../services/history_service.dart';
 import '../services/import_service.dart';
+import '../services/journal_service.dart';
 import '../services/merge_service.dart';
 import '../services/storage.dart';
 import '../utils/formats.dart';
@@ -50,6 +51,7 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
   bool _loaded = false;
   String? _storageWarning;
   Timer? _saveTimer;
+  Timer? _midnightTimer;
   String? _pendingDocument;
   bool _disposed = false;
 
@@ -91,6 +93,11 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     _loaded = true;
+    // Vergangene Entwürfe (Tag vorbei) rückwirkend abschließen – still, ohne
+    // Dialog. Das läuft nach jedem Laden, weil die App auch über Mitternacht
+    // geschlossen gewesen sein kann.
+    finalizeStaleJournalDrafts();
+    _scheduleMidnightTimer();
     _notify();
   }
 
@@ -137,6 +144,11 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
       unawaited(flush());
+    } else if (state == AppLifecycleState.resumed) {
+      // App war über Mitternacht offen (oder der Timer wurde vom System
+      // angehalten): Abschluss nachziehen und den Timer neu aufziehen.
+      finalizeStaleJournalDrafts();
+      _scheduleMidnightTimer();
     }
   }
 
@@ -317,6 +329,7 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
         timestamp: entry.timestamp,
         updatedAt: now,
         finalizedAt: entry.finalizedAt,
+        finalizedAutomatically: entry.finalizedAutomatically,
         overallFeeling: entry.overallFeeling,
         text: entry.text,
       ),
@@ -332,13 +345,15 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
         timestamp: entry.timestamp,
         updatedAt: now,
         finalizedAt: now,
+        finalizedAutomatically: false,
         overallFeeling: entry.overallFeeling,
         text: entry.text,
       ),
     );
   }
 
-  /// Öffnet eine abgeschlossene Tagesnotiz wieder (nur `finalized_at` → null).
+  /// Öffnet eine abgeschlossene Tagesnotiz wieder (`finalized_at` → null und
+  /// `finalized_automatically` → false).
   JournalEntry reopenJournalEntry(JournalEntry entry) {
     final now = isoWithOffset(_clock());
     return _storeJournalEntry(
@@ -347,10 +362,57 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
         timestamp: entry.timestamp,
         updatedAt: now,
         finalizedAt: null,
+        finalizedAutomatically: false,
         overallFeeling: entry.overallFeeling,
         text: entry.text,
       ),
     );
+  }
+
+  /// Schließt alle vergangenen Entwürfe ab (Tag vorbei, `finalized_at == null`)
+  /// und liefert die Anzahl der geänderten Einträge.
+  ///
+  /// Zeitpunkt je Eintrag: 23:59 lokale Zeit des Eintragstags; `updated_at`
+  /// bleibt unangetastet, `finalized_automatically` wird `true`. Heutige und
+  /// zukünftige Einträge werden nie angefasst. Mehrfaches Aufrufen ist
+  /// idempotent (zweiter Aufruf → 0, keine Benachrichtigung).
+  int finalizeStaleJournalDrafts({DateTime? now}) {
+    final changes = staleDraftFinalizations(_state.journal, now ?? _clock());
+    if (changes.isEmpty) return 0;
+
+    final byId = <String, JournalEntry>{
+      for (final entry in changes) entry.id: entry,
+    };
+    final journal = <JournalEntry>[
+      for (final entry in _state.journal) byId[entry.id] ?? entry,
+    ];
+    _state = _state.copyWith(journal: journal);
+    _scheduleSave();
+    _notify();
+    return changes.length;
+  }
+
+  /// Zieht einen Timer auf die nächste lokale Mitternacht auf (und danach
+  /// immer wieder neu).
+  ///
+  /// Bewusst im Repository verankert: Es hält bereits Uhr, Speicher-Debounce
+  /// und den Lifecycle-Beobachter – ein zusätzliches Widget/Controller wäre
+  /// nur ein zweiter Ort für dieselbe Verantwortung. Der Timer greift, solange
+  /// die App läuft; `load()` deckt „App war zu“ ab und `resumed` den Fall,
+  /// dass das System den Timer im Hintergrund angehalten hat.
+  void _scheduleMidnightTimer() {
+    _midnightTimer?.cancel();
+    _midnightTimer = null;
+    if (_disposed) return;
+    final now = _clock();
+    final next = nextLocalMidnight(now);
+    final delay = next.difference(now);
+    if (delay <= Duration.zero) return;
+    _midnightTimer = Timer(delay, () {
+      _midnightTimer = null;
+      finalizeStaleJournalDrafts();
+      _scheduleMidnightTimer();
+    });
   }
 
   JournalEntry _storeJournalEntry(JournalEntry entry) {
@@ -447,6 +509,8 @@ class AppRepository extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
     _saveTimer = null;
+    _midnightTimer?.cancel();
+    _midnightTimer = null;
     final document = _pendingDocument;
     _pendingDocument = null;
     if (document != null) {

@@ -116,6 +116,13 @@ heute** – genau ein Eintrag pro Tag:
   und einem kleinen Häkchen bei abgeschlossenen Notizen). Der Verlauf markiert
   abgeschlossene Tagesnotizen ebenfalls mit einem Häkchen.
 
+Offene Entwürfe werden beim nächsten App-Start um 23:59 des jeweiligen Tages
+automatisch abgeschlossen (markiert als automatisch). Gespeichert wird das im
+Feld `finalized_automatically`; in der Liste steht dann „automatisch
+abgeschlossen“ statt nur eines Häkchens, und im Sheet lässt sich der Abschluss
+mit „Wieder öffnen“ zurücknehmen. Heutige Einträge werden nie automatisch
+abgeschlossen.
+
 ## Bedienung (Tab „Verlauf“)
 
 Der Verlauf ist eine **Zeitscheibe um heute**, aufsteigend sortiert

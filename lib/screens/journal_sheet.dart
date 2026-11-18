@@ -90,6 +90,9 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
       timestamp: _saved?.timestamp ?? nowIso,
       updatedAt: nowIso,
       finalizedAt: keepFinalized ? _saved?.finalizedAt : finalizedAt,
+      finalizedAutomatically: keepFinalized
+          ? (_saved?.finalizedAutomatically ?? false)
+          : false,
       overallFeeling: _feeling,
       text: text.isEmpty ? null : text,
     );
@@ -173,6 +176,10 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
         : formatDateGerman(_repository.now);
     final finalized = _saved?.finalizedLocal;
     final lastChanged = _saved?.lastChangedLocal;
+    final autoFinalizedHint =
+        (_saved?.isAutomaticallyFinalized ?? false) && finalized != null
+        ? 'automatisch abgeschlossen um ${formatTime(finalized)}'
+        : null;
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -199,6 +206,17 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
+                        // Dezent im Kopf: der Abschluss kam von der App, nicht
+                        // vom Athleten – und lässt sich hier zurücknehmen.
+                        if (autoFinalizedHint != null)
+                          Text(
+                            autoFinalizedHint,
+                            key: const Key('journalAutoFinalizedHint'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -282,7 +300,9 @@ class _JournalEntrySheetState extends State<JournalEntrySheet> {
                 ),
               ),
             ),
-            if (_isToday)
+            // „Wieder öffnen“ auch für vergangene (automatisch) abgeschlossene
+            // Einträge – der Abschluss ist immer korrigierbar.
+            if (_isToday || finalized != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                 child: finalized == null
